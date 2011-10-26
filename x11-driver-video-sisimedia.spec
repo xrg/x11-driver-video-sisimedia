@@ -75,12 +75,6 @@ is very different, so the two cannot be easily merged.
 %apply_patches
 
 %build
-# rename driver sisimedia so it can co-exist with x.org sis driver
-# - AdamW 2008/08
-sed -i -e 's,sis_drv,sisimedia_drv,g' src/Makefile.am
-sed -i -e 's,\"sis\",\"sisimedia\",g' src/sis.h
-sed -i -e 's,sisModuleData,sisimediaModuleData,g' src/sis_driver.c
-
 autoreconf -ifs
 
 %configure2_5x --disable-static
