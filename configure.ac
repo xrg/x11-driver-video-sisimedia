@@ -116,5 +116,6 @@ XORG_CHECK_LINUXDOC
 AC_OUTPUT([
 	Makefile
 	src/Makefile
+	src/xvmc/Makefile
 	man/Makefile
 ])

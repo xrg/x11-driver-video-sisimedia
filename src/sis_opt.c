@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_opt.c,v 1.29 2005/09/20 16:34:32 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * SiS driver option evaluation
  *
@@ -27,8 +27,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Authors:  	Thomas Winischhofer <thomas@winischhofer.net>
- *              ?
+ * Author:	Thomas Winischhofer <thomas@winischhofer.net>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -68,6 +68,7 @@ typedef enum {
     OPTION_TVSTANDARD,
     OPTION_USEROMDATA,
     OPTION_INTERNALMODES,
+    OPTION_CONSTANTDPI,
     OPTION_USEOEM,
     OPTION_YV12,
     OPTION_CHTVOVERSCAN,
@@ -102,6 +103,7 @@ typedef enum {
     OPTION_USERGBCURSORBLENDTH,
     OPTION_RESTOREBYSET,
     OPTION_DDCFORCRT2,
+    OPTION_FORCECRT1LCD,
     OPTION_FORCECRT2REDETECTION,
     OPTION_SENSEYPBPR,
     OPTION_CRT1GAMMA,
@@ -113,7 +115,6 @@ typedef enum {
     OPTION_XVDEFSATURATION,
     OPTION_XVDEFDISABLEGFX,
     OPTION_XVDEFDISABLEGFXLR,
-    OPTION_XVMEMCPY,
     OPTION_XVBENCHCPY,
 #ifndef SISCHECKOSSSE
     OPTION_XVSSECOPY,
@@ -138,6 +139,7 @@ typedef enum {
     OPTION_CRT2POS,
     OPTION_METAMODES,
     OPTION_SISXINERAMA,
+    OPTION_SCR0,
     OPTION_CRT2ISSCRN0,
     OPTION_MERGEDDPI,
     OPTION_MERGEDFBNONRECT,
@@ -154,41 +156,59 @@ typedef enum {
     OPTION_FORCE1ASPECT,
     OPTION_FORCE2ASPECT,
     OPTION_TVBLUE,
-#ifdef SIS_CP
-    SIS_CP_OPT_OPTIONS
-#endif
-    OPTION_PSEUDO
+    OPTION_PSEUDO,
+    OPTION_FUTRO_TIMING, /*chaoyu's modified: for Fuji-Siemans specail timing*/
+    OPTION_TRACEVGAMISCW,
+    OPTION_USETIMING1366  /*option of enable 1366x768 timing for LVDS panel. Ivans@090109*/
 } SISOpts;
 
 static const OptionInfoRec SISOptions[] = {
+    { OPTION_FAST_VRAM,			"FastVram",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_HOSTBUS,			"HostBus",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_XVBENCHCPY,		"BenchmarkMemcpy",		OPTV_BOOLEAN,	{0}, FALSE },
+#ifndef SISCHECKOSSSE
+    { OPTION_XVSSECOPY, 		"UseSSE",  	  		OPTV_BOOLEAN,	{0}, FALSE },
+#endif
+    { OPTION_MAXXFBMEM,			"MaxXFBMem",			OPTV_INTEGER,	{0}, FALSE },
     { OPTION_ACCEL,			"Accel",			OPTV_BOOLEAN,	{0}, FALSE },
 #if defined(SIS_USE_XAA) && defined(SIS_USE_EXA)
     { OPTION_ACCELMETHOD,		"AccelMethod",			OPTV_STRING,	{0}, FALSE },
 #endif
     { OPTION_TURBOQUEUE,		"TurboQueue",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_FAST_VRAM,			"FastVram",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_HOSTBUS,			"HostBus",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_RENDER,			"RenderAcceleration",		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_FORCE_CRT1TYPE,		"ForceCRT1Type",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_FORCE_CRT2TYPE,		"ForceCRT2Type",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_SHADOW_FB,			"ShadowFB",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_DRI,			"DRI",				OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_AGP_SIZE,			"AGPSize",			OPTV_INTEGER,	{0}, FALSE },
     { OPTION_AGP_SIZE,			"GARTSize",			OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_VESA,			"Vesa",				OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_MAXXFBMEM,			"MaxXFBMem",			OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SHADOW_FB,			"ShadowFB",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_ROTATE,			"Rotate",			OPTV_STRING,	{0}, FALSE },
+    { OPTION_REFLECT,			"Reflect",			OPTV_STRING,	{0}, FALSE },
     { OPTION_ENABLESISCTRL,		"EnableSiSCtrl",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_SW_CURSOR,			"SWCursor",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_HW_CURSOR,			"HWCursor",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_USERGBCURSOR, 		"ColorHWCursor",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_USERGBCURSOR, 		"UseColorHWCursor",		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_ROTATE,			"Rotate",			OPTV_STRING,	{0}, FALSE },
-    { OPTION_REFLECT,			"Reflect",			OPTV_STRING,	{0}, FALSE },
-    { OPTION_XVIDEO,			"Xvideo",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_USERGBCURSORBLEND,		"ColorHWCursorBlending",	OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_USERGBCURSORBLENDTH,	"ColorHWCursorBlendThreshold",	OPTV_INTEGER,	{0}, FALSE },
     { OPTION_INTERNALMODES,		"InternalModes",		OPTV_BOOLEAN,	{0}, FALSE },
+#ifdef RANDR
+    { OPTION_CONSTANTDPI,		"ConstantDPI",			OPTV_BOOLEAN,	{0}, FALSE },
+#endif
     { OPTION_OVERRULERANGES,		"OverruleFrequencyRanges",	OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_RESTOREBYSET,		"RestoreBySetMode", 		OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_VESA,			"Vesa",				OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_FORCE_CRT1TYPE,		"ForceCRT1Type",		OPTV_STRING,	{0}, FALSE },
     { OPTION_FORCECRT1,			"ForceCRT1",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_XVONCRT2,			"XvOnCRT2",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_FORCE_CRT2TYPE,		"ForceCRT2Type",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_DDCFORCRT2,		"CRT2Detection", 		OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_FORCECRT1LCD,		"CRT1LCD", 		OPTV_BOOLEAN,	{0}, FALSE }, /* add by chaoyu: for D-sub LCD */
+    { OPTION_FORCECRT2REDETECTION,	"ForceCRT2ReDetection",		OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_ENABLEHOTKEY,		"EnableHotkey",	   		OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_FORCE1ASPECT,		"ForceCRT1VGAAspect",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_FORCE2ASPECT,		"ForceCRT2VGAAspect",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_USEROMDATA,		"UseROMData",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_USEOEM, 			"UseOEMData",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_SCALELCD,			"ScaleLCD",	   		OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_CENTERLCD,			"CenterLCD",	   		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_PDC,			"PanelDelayCompensation",	OPTV_INTEGER,	{0}, FALSE },
     { OPTION_PDC,			"PDC", 				OPTV_INTEGER,	{0}, FALSE },
     { OPTION_PDC,			"PanelDelayCompensation2",	OPTV_INTEGER,	{0}, FALSE },
@@ -200,9 +220,20 @@ static const OptionInfoRec SISOptions[] = {
     { OPTION_PRGB,			"ForcePanelRGB",		OPTV_INTEGER,	{0}, FALSE },
     { OPTION_SPECIALTIMING,		"SpecialTiming",		OPTV_STRING,	{0}, FALSE },
     { OPTION_TVSTANDARD,		"TVStandard",			OPTV_STRING,	{0}, FALSE },
-    { OPTION_USEROMDATA,		"UseROMData",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_USEOEM, 			"UseOEMData",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_YV12, 			"YV12",				OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_TVXPOSOFFSET,		"TVXPosOffset", 		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_TVYPOSOFFSET,		"TVYPosOffset", 		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SISTVEDGEENHANCE,		"SISTVEdgeEnhance",		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SISTVANTIFLICKER,		"SISTVAntiFlicker",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_SISTVSATURATION,		"SISTVSaturation",		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SISTVCHROMAFILTER,		"SISTVCFilter",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_SISTVLUMAFILTER,		"SISTVYFilter",	  		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SISTVCOLCALIBFINE,		"SISTVColorCalibFine",		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SISTVCOLCALIBCOARSE,	"SISTVColorCalibCoarse",	OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_TVXSCALE,			"SISTVXScale", 	  		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_TVYSCALE,			"SISTVYScale", 	  		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_SENSEYPBPR,		"SenseYPbPr",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_YPBPRAR,			"YPbPrAspectRatio",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_TVBLUE,			"TVBlueWorkAround",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CHTVTYPE,			"CHTVType",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CHTVOVERSCAN,		"CHTVOverscan",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CHTVSOVERSCAN,		"CHTVSuperOverscan",		OPTV_BOOLEAN,	{0}, FALSE },
@@ -214,29 +245,11 @@ static const OptionInfoRec SISOptions[] = {
     { OPTION_CHTVCVBSCOLOR,		"CHTVCVBSColor",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CHTVTEXTENHANCE,		"CHTVTextEnhance",		OPTV_INTEGER,	{0}, FALSE },
     { OPTION_CHTVCONTRAST,		"CHTVContrast",			OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_SISTVEDGEENHANCE,		"SISTVEdgeEnhance",		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_SISTVANTIFLICKER,		"SISTVAntiFlicker",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_SISTVSATURATION,		"SISTVSaturation",		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_SISTVCHROMAFILTER,		"SISTVCFilter",			OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_SISTVLUMAFILTER,		"SISTVYFilter",	  		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_SISTVCOLCALIBFINE,		"SISTVColorCalibFine",		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_SISTVCOLCALIBCOARSE,	"SISTVColorCalibCoarse",	OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_TVXSCALE,			"SISTVXScale", 	  		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_TVYSCALE,			"SISTVYScale", 	  		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_TVXPOSOFFSET,		"TVXPosOffset", 		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_TVYPOSOFFSET,		"TVYPosOffset", 		OPTV_INTEGER,	{0}, FALSE },
     { OPTION_SIS6326ANTIFLICKER,	"SIS6326TVAntiFlicker",		OPTV_STRING,	{0}, FALSE },
     { OPTION_SIS6326ENABLEYFILTER,	"SIS6326TVEnableYFilter",	OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_SIS6326YFILTERSTRONG,	"SIS6326TVYFilterStrong",	OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_SIS6326FORCETVPPLUG,	"SIS6326TVForcePlug",		OPTV_STRING,	{0}, FALSE },
     { OPTION_SIS6326FSCADJUST,		"SIS6326FSCAdjust",		OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_YPBPRAR,			"YPbPrAspectRatio",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_TVBLUE,			"TVBlueWorkAround",		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_USERGBCURSORBLEND,		"ColorHWCursorBlending",	OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_USERGBCURSORBLENDTH,	"ColorHWCursorBlendThreshold",	OPTV_INTEGER,	{0}, FALSE },
-    { OPTION_DDCFORCRT2,		"CRT2Detection", 		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_FORCECRT2REDETECTION,	"ForceCRT2ReDetection",		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_SENSEYPBPR,		"SenseYPbPr",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CRT1GAMMA,			"CRT1Gamma",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_CRT2GAMMA,			"CRT2Gamma",			OPTV_ANYSTR,	{0}, FALSE },
     { OPTION_STOREDBRI,			"GammaBrightness",		OPTV_STRING,	{0}, FALSE },
@@ -251,6 +264,8 @@ static const OptionInfoRec SISOptions[] = {
     { OPTION_NEWSTOREDCON2,		"CRT2Contrast",			OPTV_STRING,	{0}, FALSE },
     { OPTION_NEWSTOREDCON2,		"CRT2NewGammaContrast",		OPTV_STRING,	{0}, FALSE },
     { OPTION_CRT1SATGAIN,		"CRT1Saturation", 		OPTV_INTEGER,	{0}, FALSE },
+    { OPTION_XVIDEO,			"Xvideo",			OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_XVONCRT2,			"XvOnCRT2",			OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_XVGAMMA,			"XvGamma", 	  		OPTV_ANYSTR,	{0}, FALSE },
     { OPTION_XVDEFCONTRAST,		"XvDefaultContrast", 		OPTV_INTEGER,	{0}, FALSE },
     { OPTION_XVDEFBRIGHTNESS,		"XvDefaultBrightness",		OPTV_INTEGER,	{0}, FALSE },
@@ -264,17 +279,8 @@ static const OptionInfoRec SISOptions[] = {
     { OPTION_XVINSIDECHROMAKEY,		"XvInsideChromaKey",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_XVYUVCHROMAKEY,		"XvYUVChromaKey",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_XVDISABLECOLORKEY,		"XvDisableColorKey",		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_XVMEMCPY,			"XvUseMemcpy",  		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_XVBENCHCPY,		"BenchmarkMemcpy",		OPTV_BOOLEAN,	{0}, FALSE },
-#ifndef SISCHECKOSSSE
-    { OPTION_XVSSECOPY, 		"UseSSE",  	  		OPTV_BOOLEAN,	{0}, FALSE },
-#endif
     { OPTION_XVDEFAULTADAPTOR,		"XvDefaultAdaptor",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_SCALELCD,			"ScaleLCD",	   		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_CENTERLCD,			"CenterLCD",	   		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_ENABLEHOTKEY,		"EnableHotkey",	   		OPTV_BOOLEAN,	{0}, FALSE },
-    { OPTION_FORCE1ASPECT,		"ForceCRT1VGAAspect",		OPTV_STRING,	{0}, FALSE },
-    { OPTION_FORCE2ASPECT,		"ForceCRT2VGAAspect",		OPTV_STRING,	{0}, FALSE },
+    { OPTION_YV12, 			"YV12",				OPTV_BOOLEAN,	{0}, FALSE },
 #ifdef SISMERGED
     { OPTION_MERGEDFB,			"MergedFB",			OPTV_ANYSTR,	{0}, FALSE },
     { OPTION_MERGEDFB,			"TwinView",			OPTV_ANYSTR,	{0}, FALSE },	/* alias */
@@ -285,19 +291,20 @@ static const OptionInfoRec SISOptions[] = {
     { OPTION_CRT2VREFRESH,		"SecondMonitorVertRefresh", 	OPTV_STRING,	{0}, FALSE },   /* alias */
     { OPTION_CRT2POS,			"CRT2Position",			OPTV_STRING,	{0}, FALSE },
     { OPTION_CRT2POS,			"TwinViewOrientation",		OPTV_STRING,	{0}, FALSE },   /* alias */
-    { OPTION_METAMODES,			"MetaModes",  			OPTV_STRING,	{0}, FALSE },
-    { OPTION_MERGEDDPI,			"MergedDPI", 			OPTV_STRING,	{0}, FALSE },
+    { OPTION_METAMODES,			"MetaModes",			OPTV_STRING,	{0}, FALSE },
+    { OPTION_MERGEDDPI,			"MergedDPI",			OPTV_STRING,	{0}, FALSE },
 #ifdef SISXINERAMA
     { OPTION_SISXINERAMA,		"MergedXinerama",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_SISXINERAMA,		"TwinviewXineramaInfo",		OPTV_BOOLEAN,	{0}, FALSE },   /* alias */
+    { OPTION_SCR0,			"MergedXineramaScreen0",	OPTV_ANYSTR,	{0}, FALSE },
     { OPTION_CRT2ISSCRN0,		"MergedXineramaCRT2IsScreen0",	OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_MERGEDFBNONRECT,		"MergedNonRectangular",		OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_MERGEDFBMOUSER,		"MergedMouseRestriction",	OPTV_BOOLEAN,	{0}, FALSE },
 #endif
 #endif
-#ifdef SIS_CP
-    SIS_CP_OPTION_DETAIL
-#endif
+    { OPTION_FUTRO_TIMING,		"FutroTiming",			OPTV_BOOLEAN,   {0}, FALSE },/*chaoyu's modified: for Fuji-seimans special timing*/
+    { OPTION_TRACEVGAMISCW,             "TraceVgaMISCW",                OPTV_BOOLEAN,   {0}, FALSE },/*Ivans added for helping detected CRT1 using BIOS setting.*/
+    { OPTION_USETIMING1366,              "UseTiming1366",                  OPTV_BOOLEAN,   {0}, FALSE },/*enable 1366 timing on LVDS, Ivans@090109*/
     { -1,				NULL,				OPTV_NONE,	{0}, FALSE }
 };
 
@@ -436,15 +443,15 @@ SiSOptions(ScrnInfoPtr pScrn)
     MessageType from;
     char        *strptr;
     int         ival;
+    Bool        val, IsDHM = FALSE;
+    Bool	IsSecondHead = FALSE;
     static const char *baddhm     = "Option \"%s\" ignored in Dual Head mode\n";
     static const char *validparm  = "Valid parameters are";
     static const char *disabledstr= "disabled";
     static const char *enabledstr = "enabled";
     static const char *gammaopt   = "%s expects either a boolean, or 1 or 3 real numbers (0.1 - 10.0)\n";
     static const char *briopt     = "%s expects 1 or 3 real numbers (0.1 - 10.0)\n";
-    static const char *newbriopt     = "%s expects 1 or 3 real numbers (-1.0 - 1.0)\n";
-    Bool        val, IsDHM = FALSE;
-    Bool	IsSecondHead = FALSE;
+    static const char *newbriopt  = "%s expects 1 or 3 real numbers (-1.0 - 1.0)\n";
 
     /* Collect all of the relevant option flags (fill in pScrn->options) */
     xf86CollectOptions(pScrn, NULL);
@@ -457,7 +464,9 @@ SiSOptions(ScrnInfoPtr pScrn)
     xf86ProcessOptions(pScrn->scrnIndex, pScrn->options, pSiS->Options);
 
     /* Set defaults */
-
+    pSiS->trace_VGA_MISCW = 0;/*Ivans add for using or non-using CRT1 detection by VBIOS.*/
+    pSiS->EnablePanel_1366x768 =0;/*key open 1366x768, now I force it enable. Ivans@090109*/
+    
     pSiS->newFastVram = -1;
     pSiS->HostBus = TRUE;
     pSiS->TurboQueue = TRUE;
@@ -482,6 +491,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 #endif
     pSiS->ShadowFB = FALSE;
     pSiS->loadDRI = FALSE;
+    pSiS->DRIEnabled = FALSE;
 #ifdef XF86DRI
     pSiS->agpWantedPages = AGP_PAGES;
 #endif
@@ -500,6 +510,11 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->OptTVStand = -1;
     pSiS->OptROMUsage = -1;
     pSiS->noInternalModes = FALSE;
+#ifdef RANDR
+    pSiS->constantDPI = -1;
+#else
+    pSiS->constantDPI = FALSE;
+#endif
     pSiS->OptUseOEM = -1;
     pSiS->OptTVOver = -1;
     pSiS->OptTVSOver = -1;
@@ -533,6 +548,7 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->restorebyset = TRUE;
     pSiS->nocrt2ddcdetection = FALSE;
     pSiS->forcecrt2redetection = TRUE;
+    pSiS->havewide1 = pSiS->havewide2 = FALSE;
     pSiS->SenseYPbPr = TRUE;
     pSiS->ForceCRT1Type = CRT1_VGA;
     pSiS->CRT1TypeForced = FALSE;
@@ -547,8 +563,12 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->enablesisctrl = FALSE;
     if((pSiS->VGAEngine == SIS_300_VGA) || (pSiS->VGAEngine == SIS_315_VGA)) {
        pSiS->XvDefBri = 10;
-       pSiS->XvDefCon = 2;
-    } else {
+       if((pSiS->ChipType == SIS_662)||(pSiS->ChipType == SIS_671))
+          pSiS->XvDefCon = 64; /*xv contrast 256 levels,set default be 64.ivans*/
+       else
+          pSiS->XvDefCon = 2;
+    } 
+    else {
        pSiS->XvDefBri = 0;
        pSiS->XvDefCon = 4;
     }
@@ -559,7 +579,6 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->XvDefAdaptorBlit = FALSE;
     pSiS->UsePanelScaler = -1;
     pSiS->CenterLCD = -1;
-    pSiS->XvUseMemcpy = TRUE;
     pSiS->XvUseChromaKey = FALSE;
     pSiS->XvDisableColorKey = FALSE;
     pSiS->XvInsideChromaKey = FALSE;
@@ -580,6 +599,9 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->HWCursorIsVisible = FALSE;
     pSiS->OverruleRanges = TRUE;
     pSiS->BenchMemCpy = TRUE;
+#ifdef ENABLEXvMC
+    pSiS->FBBufferHandle = NULL;
+#endif
 #ifndef SISCHECKOSSSE
     pSiS->XvSSEMemcpy = FALSE;
 #endif
@@ -591,18 +613,18 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->MetaModes = NULL;
     pSiS->MergedFBXDPI = pSiS->MergedFBYDPI = 0;
     pSiS->CRT1XOffs = pSiS->CRT1YOffs = pSiS->CRT2XOffs = pSiS->CRT2YOffs = 0;
-    pSiS->NonRect = pSiS->HaveNonRect = pSiS->HaveOffsRegions = FALSE;
-    pSiS->MBXNR1XMAX = pSiS->MBXNR1YMAX = pSiS->MBXNR2XMAX = pSiS->MBXNR2YMAX = 65536;
+    pSiS->NonRect = TRUE;
+    pSiS->HaveNonRect = pSiS->HaveOffsRegions = FALSE;
+    pSiS->MBXNRXMAX = pSiS->MBXNRYMAX = 65536;
     pSiS->MouseRestrictions = TRUE;
 #ifdef SISXINERAMA
     pSiS->UseSiSXinerama = TRUE;
+    pSiS->MFBScr0LR = TRUE;	/* By default: Left/bottom are screen 0 */
+    pSiS->MFBScr0TB = FALSE;
     pSiS->CRT2IsScrn0 = FALSE;
 #endif
 #endif
-#ifdef SIS_CP
-    SIS_CP_OPT_DEFAULT
-#endif
-
+  
     /* Chipset dependent defaults */
 
     if(pSiS->Chipset == PCI_CHIP_SIS530) {
@@ -635,7 +657,7 @@ SiSOptions(ScrnInfoPtr pScrn)
      * so don't load DRI by default on
      * others.
      */
-    if(pSiS->VGAEngine == SIS_300_VGA) {
+    if(pSiS->VGAEngine == SIS_300_VGA || pSiS->VGAEngine == SIS_315_VGA) {
        pSiS->loadDRI = TRUE;
     }
 
@@ -661,6 +683,7 @@ SiSOptions(ScrnInfoPtr pScrn)
     } else if(pSiS->VGAEngine == SIS_315_VGA) {
        pSiS->AllowHotkey = 1;
     }
+
 
     /* Collect the options */
 
@@ -692,17 +715,17 @@ SiSOptions(ScrnInfoPtr pScrn)
     /* MaxXFBMem
      * This options limits the amount of video memory X uses for screen
      * and off-screen buffers. This option should be used if using DRI
-     * is intended. The kernel framebuffer driver required for DRM will
-     * start its memory heap at 12MB if it detects more than 16MB, at 8MB if
-     * between 8 and 16MB are available, otherwise at 4MB. So, if the amount
+     * is intended. The kernel framebuffer driver (formerly required for DRM)
+     * will start its memory heap at 12MB if it detects more than 16MB, at 8MB
+     * if between 8 and 16MB are available, otherwise at 4MB. So, if the amount
      * of memory X uses, a clash between the framebuffer's memory heap
      * and X is avoided. The amount is to be specified in KB.
+     * Starting with Linux 2.6.3, this option is no longer needed. And
+     * neither is sisfb for DRI, since the DRM got a memory manager of its
+     * own.
      */
     if(xf86GetOptValInteger(pSiS->Options, OPTION_MAXXFBMEM, (int *)&pSiS->maxxfbmem)) {
        if(pSiS->maxxfbmem >= 2048) {
-	  xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
-		   "MaxXFBMem: Framebuffer memory shall be limited to %d KB\n",
-		    pSiS->maxxfbmem);
 	  pSiS->maxxfbmem *= 1024;
        } else {
 	  pSiS->maxxfbmem = 0;
@@ -724,6 +747,9 @@ SiSOptions(ScrnInfoPtr pScrn)
 #endif
     }
 
+    /* AccelMethod
+     * Chooses between XAA and EXA
+     */
 #if defined(SIS_USE_XAA) && defined(SIS_USE_EXA)
     if(!pSiS->NoAccel) {
        from = X_DEFAULT;
@@ -741,8 +767,8 @@ SiSOptions(ScrnInfoPtr pScrn)
     }
 #endif
 
-    /* RenderAcceleration
-     * En/Disables RENDER acceleration (315/330/340 series only, not 550, not XGI Z7)
+    /* RenderAcceleration (for XAA only)
+     * En/Disables RENDER acceleration (315 and later only, not 550, not XGI Z7)
      */
 #ifdef SIS_USE_XAA
     if((pSiS->VGAEngine == SIS_315_VGA)   &&
@@ -759,6 +785,7 @@ SiSOptions(ScrnInfoPtr pScrn)
     pSiS->doRender = FALSE;
 #endif
 
+
     /* SWCursor, HWCursor
      * Chooses whether to use the hardware or software cursor
      */
@@ -771,11 +798,11 @@ SiSOptions(ScrnInfoPtr pScrn)
        pSiS->HWCursor = FALSE;
        pSiS->OptUseColorCursor = 0;
     }
-    xf86DrvMsg(pScrn->scrnIndex, from, "Using %s cursor\n",
-                                pSiS->HWCursor ? "HW" : "SW");
+    if(!pSiS->HWCursor) {
+       xf86DrvMsg(pScrn->scrnIndex, from, "Using SW cursor\n");
+    }
 
-    /*
-     * UseColorHWCursor
+    /* UseColorHWCursor
      * ColorHWCursorBlending
      * ColorHWCursorBlendThreshold
      *
@@ -978,8 +1005,44 @@ SiSOptions(ScrnInfoPtr pScrn)
 		if(!val) pSiS->UseSiSXinerama = FALSE;
 	     }
 	     if(pSiS->UseSiSXinerama) {
-		if(xf86GetOptValBool(pSiS->Options, OPTION_CRT2ISSCRN0, &val)) {
+	        if((strptr = (char *)xf86GetOptValString(pSiS->Options, OPTION_SCR0))) {
+	           char *tempstr1 = xalloc(strlen(strptr) + 1);
+	           char *tempstr2 = xalloc(strlen(strptr) + 1);
+	           char *tempstr;
+		   int i, result;
+		   pSiS->MFBScr0LR = pSiS->MFBScr0TB = -1;
+		   if((tempstr = strpbrk(strptr, ",;-"))) {
+		      *tempstr = ' ';
+		   }
+		   tempstr = tempstr1;
+		   if((result = sscanf(strptr, "%s %s", tempstr1, tempstr2)) > 0) {
+		      for(i = 1; i <= max(result, 2); i++) {
+			 if(!xf86NameCmp(tempstr, "left")) {
+			    pSiS->MFBScr0LR = TRUE;
+			 } else if(!xf86NameCmp(tempstr, "right")) {
+			    pSiS->MFBScr0LR = FALSE;
+			 } else if(!xf86NameCmp(tempstr, "top")) {
+			    pSiS->MFBScr0TB = TRUE;
+			 } else if(!xf86NameCmp(tempstr, "bottom")) {
+			    pSiS->MFBScr0TB = FALSE;
+			 }
+			 tempstr = tempstr2;
+		      }
+		   }
+		   if(pSiS->MFBScr0LR == -1 || pSiS->MFBScr0TB == -1) {
+		      xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
+			"Bad or incomplete argument(s) for Option \"%s\"\n",
+			pSiS->Options[SiS_FIFT(pSiS->Options, OPTION_SCR0)].name);
+		   }
+		   xfree(tempstr1);
+		   xfree(tempstr2);
+	        } else if(xf86GetOptValBool(pSiS->Options, OPTION_CRT2ISSCRN0, &val)) {
+		   xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
+			"Option \"%s\" is deprecated, use \"%s\"\n",
+			pSiS->Options[SiS_FIFT(pSiS->Options, OPTION_CRT2ISSCRN0)].name,
+			pSiS->Options[SiS_FIFT(pSiS->Options, OPTION_SCR0)].name);
 		   pSiS->CRT2IsScrn0 = val ? TRUE : FALSE;
+		   pSiS->MFBScr0LR = pSiS->MFBScr0TB = -1;
 		}
 		if(xf86GetOptValBool(pSiS->Options, OPTION_MERGEDFBNONRECT, &val)) {
 		   pSiS->NonRect = val ? TRUE : FALSE;
@@ -1017,15 +1080,12 @@ SiSOptions(ScrnInfoPtr pScrn)
 		OPTION_SISTVCHROMAFILTER, OPTION_SISTVLUMAFILTER, OPTION_SISTVCOLCALIBCOARSE,
 		OPTION_SISTVCOLCALIBFINE, OPTION_TVXPOSOFFSET, OPTION_TVYPOSOFFSET,
 		OPTION_TVXSCALE, OPTION_TVYSCALE, OPTION_TVBLUE, OPTION_CRT2GAMMA, OPTION_XVONCRT2,
-		OPTION_XVDEFAULTADAPTOR, OPTION_XVMEMCPY, OPTION_XVBENCHCPY, OPTION_FORCE2ASPECT,
+		OPTION_XVDEFAULTADAPTOR, OPTION_XVBENCHCPY, OPTION_FORCE2ASPECT,
 #if defined(SIS_USE_XAA) && defined(SIS_USE_EXA)
 		OPTION_ACCELMETHOD,
 #endif
 #ifndef SISCHECKOSSSE
 		OPTION_XVSSECOPY,
-#endif
-#ifdef SIS_CP
-		SIS_CP_OPT_DH_WARN
 #endif
 		-1
        };
@@ -1048,7 +1108,7 @@ SiSOptions(ScrnInfoPtr pScrn)
           xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Using VRAM command queue, size %dk\n",
 		pSiS->cmdQueueSize / 1024);
 #else
-	  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Using MMIO command queue, size 512k\n");
+	  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Using MMIO command queue\n");
 #endif
 
        } else {
@@ -1060,11 +1120,12 @@ SiSOptions(ScrnInfoPtr pScrn)
 	  }
 	  xf86DrvMsg(pScrn->scrnIndex, from, "TurboQueue %s\n",
 		     pSiS->TurboQueue ? enabledstr : disabledstr);
+
        }
 
        if((pSiS->VGAEngine == SIS_300_VGA) || (pSiS->VGAEngine == SIS_315_VGA)) {
 
-	  /* RestoreBySetMode (300/315/330 series only)
+	  /* RestoreBySetMode (300/315/330 series and later only)
 	   * Set this to force the driver to set the old mode instead of restoring
 	   * the register contents. This can be used to overcome problems with
 	   * LCD panels and video bridges.
@@ -1101,7 +1162,8 @@ SiSOptions(ScrnInfoPtr pScrn)
 		ival ? " in dual head mode" : "");
 	  if(pSiS->Chipset == PCI_CHIP_SIS630 ||
 	     pSiS->Chipset == PCI_CHIP_SIS650 ||
-	     pSiS->Chipset == PCI_CHIP_SIS660) {
+	     pSiS->Chipset == PCI_CHIP_SIS660 ||
+	     pSiS->Chipset == PCI_CHIP_SIS670) {
 	     xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 		 "WARNING: Using the Hotkey might freeze your machine, regardless\n");
 	     xf86DrvMsg(pScrn->scrnIndex, X_INFO,
@@ -1113,6 +1175,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 	   * specific data from the BIOS ROM. This option can - and
 	   * should - be used in case the driver makes problems
 	   * because SiS changed the location of this data.
+	   * Generally, don't use this.
 	   */
 	  if(xf86GetOptValBool(pSiS->Options, OPTION_USEROMDATA, &val)) {
 	     pSiS->OptROMUsage = val ? 1 : 0;
@@ -1127,6 +1190,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 	   * If this data is incorrect, the TV may lose color and
 	   * the LCD panel might show some strange effects. Use this
 	   * option to disable the usage of this data.
+	   * Generally, don't use this.
 	   */
 	  if(xf86GetOptValBool(pSiS->Options, OPTION_USEOEM, &val)) {
 	     pSiS->OptUseOEM = val ? 1 : 0;
@@ -1144,6 +1208,9 @@ SiSOptions(ScrnInfoPtr pScrn)
 	   */
 	  if(xf86GetOptValBool(pSiS->Options, OPTION_DDCFORCRT2, &val)) {
 	     pSiS->nocrt2ddcdetection = val ? FALSE : TRUE;
+	  }
+	  if(xf86GetOptValBool(pSiS->Options, OPTION_FORCECRT1LCD, &val)) {
+	     pSiS->forceLCDcrt1= val ? TRUE : FALSE;
 	  }
 
 	  /* ForceCRT2ReDetection (315/330 series and later only)
@@ -1171,37 +1238,37 @@ SiSOptions(ScrnInfoPtr pScrn)
 	   * YPbPr and detect SVideo or CVBS only.
 	   */
 	  if(xf86GetOptValBool(pSiS->Options, OPTION_SENSEYPBPR, &val)) {
-	     if(val) pSiS->SenseYPbPr = TRUE;
-	     else    pSiS->SenseYPbPr = FALSE;
+	     pSiS->SenseYPbPr = val ? TRUE : FALSE;
 	  }
 
 	  /* ForceCRT1Type (315/330 series and later only)
 	   * Used for forcing the driver to initialize CRT1 as
 	   * VGA (analog) or LCDA (for simultanious LCD and TV
-	   * display) - on M650/651 and 661 or later with 301C/30xLV only!
+	   * display) - on M650/651 and 661 or later with 301C/30xLV or later only!
 	   */
-	  if(pSiS->VGAEngine == SIS_315_VGA) {
-	     if((strptr = (char *)xf86GetOptValString(pSiS->Options, OPTION_FORCE_CRT1TYPE))) {
-		if((!xf86NameCmp(strptr,"VGA")) || (!xf86NameCmp(strptr,"CRT"))) {
-		   pSiS->ForceCRT1Type = CRT1_VGA;
-		   pSiS->CRT1TypeForced = TRUE;
-		} else if( (!xf86NameCmp(strptr,"LCD"))   ||
-			   (!xf86NameCmp(strptr,"LCDA"))  ||
-			   (!xf86NameCmp(strptr,"DVI-D")) ||
-			   (!xf86NameCmp(strptr,"DVID"))  ||
-			   (!xf86NameCmp(strptr,"DVI"))   ||
-			   (!xf86NameCmp(strptr,"LCD-A")) ) {
-		   pSiS->ForceCRT1Type = CRT1_LCDA;
-		   pSiS->CRT1TypeForced = TRUE;
-		} else if((!xf86NameCmp(strptr,"NONE")) || (!xf86NameCmp(strptr,"OFF"))) {
-		   pSiS->ForceCRT1Type = CRT1_VGA;
-		   pSiS->forceCRT1 = 0;
-		   pSiS->CRT1TypeForced = TRUE;
-		} else {
-		   SiS_PrintBadOpt(pScrn, strptr, OPTION_FORCE_CRT1TYPE);
-		   xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		       "%s \"VGA\" (alias \"CRT\"), \"LCD\" (alias \"DVI-D\") or NONE\n", validparm);
-		}
+	  if((strptr = (char *)xf86GetOptValString(pSiS->Options, OPTION_FORCE_CRT1TYPE))) {
+	     if( (!xf86NameCmp(strptr,"VGA")) ||
+	         (!xf86NameCmp(strptr,"CRT")) ||
+	         SiS_StrIsBoolOn(strptr) ) {
+		pSiS->ForceCRT1Type = CRT1_VGA;
+		pSiS->CRT1TypeForced = TRUE;
+	     } else if( (!xf86NameCmp(strptr,"LCD"))   ||
+			(!xf86NameCmp(strptr,"LCDA"))  ||
+			(!xf86NameCmp(strptr,"DVI-D")) ||
+			(!xf86NameCmp(strptr,"DVID"))  ||
+			(!xf86NameCmp(strptr,"DVI"))   ||
+			(!xf86NameCmp(strptr,"LCD-A")) ) {
+		pSiS->ForceCRT1Type = CRT1_LCDA;
+		pSiS->CRT1TypeForced = TRUE;
+	     } else if( (!xf86NameCmp(strptr,"NONE")) ||
+			SiS_StrIsBoolOff(strptr) ) {
+		pSiS->ForceCRT1Type = CRT1_VGA;
+		pSiS->forceCRT1 = 0;
+		pSiS->CRT1TypeForced = TRUE;
+	     } else {
+		SiS_PrintBadOpt(pScrn, strptr, OPTION_FORCE_CRT1TYPE);
+		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+		       "%s \"VGA\" (alias \"CRT\" or \"ON\"), \"LCD\" (alias \"DVI-D\") or NONE (alias \"OFF\")\n", validparm);
 	     }
 	  }
 
@@ -1210,6 +1277,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 	   * intention is mainly for old monitors that can't be detected
 	   * automatically. This is only useful on machines with a video bridge.
 	   * In normal cases, this option won't be necessary.
+	   * This option is deprecated. Use ForceCRT1Type instead.
 	   */
 	  if(pSiS->ForceCRT1Type == CRT1_VGA) {
 	     if(xf86GetOptValBool(pSiS->Options, OPTION_FORCECRT1, &val)) {
@@ -1217,6 +1285,8 @@ SiSOptions(ScrnInfoPtr pScrn)
 		xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
 			"CRT1 shall be forced %s\n",
 			val ? "ON" : "OFF");
+		xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
+			"Option \"ForceCRT1\" is deprecated. Use Option \"ForceCRT1Type\" instead.\n");
 	     }
 	  }
 
@@ -1245,7 +1315,8 @@ SiSOptions(ScrnInfoPtr pScrn)
 	     } else if(!xf86NameCmp(strptr,"SCART")) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_SCART;
-	     } else if((!xf86NameCmp(strptr,"LCD")) || (!xf86NameCmp(strptr,"DVI-D"))) {
+	     } else if( (!xf86NameCmp(strptr,"LCD")) ||
+			(!xf86NameCmp(strptr,"DVI-D")) ) {
 		if(pSiS->ForceCRT1Type == CRT1_VGA) {
 		   pSiS->ForceCRT2Type = CRT2_LCD;
 		} else {
@@ -1253,7 +1324,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 		   xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 		      "Can't set both CRT1 and CRT2 type to LCD; CRT2 disabled\n");
 		}
-	     } else if((!xf86NameCmp(strptr,"VGA")) ||
+	     } else if((!xf86NameCmp(strptr,"VGA"))   ||
 		       (!xf86NameCmp(strptr,"DVI-A")) ||
 		       (!xf86NameCmp(strptr,"CRT"))) {
 		if(pSiS->ForceCRT1Type == CRT1_VGA) {
@@ -1263,7 +1334,8 @@ SiSOptions(ScrnInfoPtr pScrn)
 		   xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 		      "CRT2 can only be TV or off while CRT1 is LCD; CRT2 disabled\n");
 		}
-	     } else if(!xf86NameCmp(strptr,"NONE"))
+	     } else if( (!xf86NameCmp(strptr,"NONE")) ||
+			SiS_StrIsBoolOff(strptr) )
 		pSiS->ForceCRT2Type = 0;
 	     else if((!xf86NameCmp(strptr,"DSTN")) && (pSiS->Chipset == PCI_CHIP_SIS550)) {
 		if(pSiS->ForceCRT1Type == CRT1_VGA) {
@@ -1275,52 +1347,53 @@ SiSOptions(ScrnInfoPtr pScrn)
 		   pSiS->ForceCRT2Type = CRT2_LCD;
 		   pSiS->FSTN = TRUE;
 		}
-#ifdef ENABLE_YPBPR
 	     } else if(!xf86NameCmp(strptr,"HIVISION")) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_HIVISION;
-	     } else if((!xf86NameCmp(strptr,"YPBPR1080I")) && (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( (!xf86NameCmp(strptr,"YPBPR1080I")) &&
+			(pSiS->VGAEngine == SIS_315_VGA) ) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR1080I;
-	     } else if(((!xf86NameCmp(strptr,"YPBPR525I")) || (!xf86NameCmp(strptr,"YPBPR480I"))) &&
-		       (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( ( (!xf86NameCmp(strptr,"YPBPR525I")) ||
+			  (!xf86NameCmp(strptr,"YPBPR480I")) )  &&
+			(pSiS->VGAEngine == SIS_315_VGA) ) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR525I;
-	     } else if(((!xf86NameCmp(strptr,"YPBPR525P")) || (!xf86NameCmp(strptr,"YPBPR480P"))) &&
-		       (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( ( (!xf86NameCmp(strptr,"YPBPR525P")) ||
+			  (!xf86NameCmp(strptr,"YPBPR480P")) )  &&
+			(pSiS->VGAEngine == SIS_315_VGA) ) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR525P;
-	     } else if(((!xf86NameCmp(strptr,"YPBPR625I")) || (!xf86NameCmp(strptr,"YPBPR576I"))) &&
-		       (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( ( (!xf86NameCmp(strptr,"YPBPR625I")) ||
+			  (!xf86NameCmp(strptr,"YPBPR576I")) )  &&
+			(pSiS->VGAEngine == SIS_315_VGA)) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR625I;
-	     } else if(((!xf86NameCmp(strptr,"YPBPR625P")) || (!xf86NameCmp(strptr,"YPBPR576P"))) &&
-		       (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( ( (!xf86NameCmp(strptr,"YPBPR625P")) ||
+			  (!xf86NameCmp(strptr,"YPBPR576P")))  &&
+			(pSiS->VGAEngine == SIS_315_VGA) ) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR625P;
-	     } else if(((!xf86NameCmp(strptr,"YPBPR750P")) || (!xf86NameCmp(strptr,"YPBPR720P"))) &&
-	               (pSiS->VGAEngine == SIS_315_VGA)) {
+	     } else if( ( (!xf86NameCmp(strptr,"YPBPR750P")) ||
+			  (!xf86NameCmp(strptr,"YPBPR720P")))  &&
+			(pSiS->VGAEngine == SIS_315_VGA) ) {
 		pSiS->ForceCRT2Type = CRT2_TV;
 		pSiS->ForceTVType = TV_YPBPR;
 		pSiS->ForceYPbPrType = TV_YPBPR750P;
-#endif
 	     } else {
 		SiS_PrintBadOpt(pScrn, strptr, OPTION_FORCE_CRT2TYPE);
 		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 		    "%s \"LCD\" (=\"DVI-D\"), \"TV\", \"SVIDEO\", \"COMPOSITE\",\n"
 		    "\t\"SVIDEO+COMPOSITE\", \"SCART\", \"VGA\" (=\"DVI-A\") or \"NONE\"; on the SiS550\n"
 		    "\talso \"DSTN\" and \"FSTN\""
-#ifdef ENABLE_YPBPR
 		    				"; on SiS 301/301B bridges also \"HIVISION\", and on\n"
-		    "\tSiS315/330/340 series with 301C/30xLV bridge also \"YPBPR480I\", \"YPBPR480P\",\n"
-		    "\t\"YPBPR576I\", \"YPBPR576P\", \"YPBPR720P\" and \"YPBPR1080I\""
-#endif
-		    "\n", validparm);
+		    "\tSiS315/330/340 series with 301C/30xLV/307 also \"YPBPR480I\", \"YPBPR480P\",\n"
+		    "\t\"YPBPR576I\", \"YPBPR576P\", \"YPBPR720P\" and \"YPBPR1080I\"\n", validparm);
 	     }
 
 	     if(pSiS->ForceCRT2Type != CRT2_DEFAULT)
@@ -1345,6 +1418,10 @@ SiSOptions(ScrnInfoPtr pScrn)
 	     }
 	  }
 
+	  /* SpecialTiming
+	   * Override the driver's autodetection of some special
+	   * systems requiring some hacks.
+	   */
 	  strptr = (char *)xf86GetOptValString(pSiS->Options, OPTION_SPECIALTIMING);
 	  if(strptr != NULL) {
 	     int i = 0;
@@ -1408,8 +1485,10 @@ SiSOptions(ScrnInfoPtr pScrn)
 	     if(strptr != NULL) {
 		if(!xf86NameCmp(strptr,"WIDE")) {
 		   pSiS->SiS_Pr->SiS_UseWideCRT2 = TRUE;
+		   pSiS->havewide2 = TRUE;
 		} else if(!xf86NameCmp(strptr,"NORMAL")) {
 		   pSiS->SiS_Pr->SiS_UseWideCRT2 = FALSE;
+		   pSiS->havewide2 = TRUE;
 		} else {
 		   SiS_PrintBadOpt(pScrn, strptr, OPTION_FORCE2ASPECT);
 		   xf86DrvMsg(pScrn->scrnIndex, X_INFO, "%s:\n", validparm);
@@ -1531,10 +1610,12 @@ SiSOptions(ScrnInfoPtr pScrn)
 	     }
 	  }
 
-	 /* TVBlueWorkAround (315/later series only)
+	 /* TVBlueWorkAround (315 series until 661 only)
 	  * TRUE and FALSE are two ways to work around a "blue shade" on
 	  * TV output. This work-around is disabled by not setting the
-	  * option. 315 series + 301B-DH only.
+	  * option. 315 series + 301B-DH only. For 661 and later, the
+	  * BIOS contains the respective values so we can read them
+	  * from there.
 	  */
 	  if(pSiS->VGAEngine == SIS_315_VGA) {
 	     if(xf86GetOptValBool(pSiS->Options, OPTION_TVBLUE, &val)) {
@@ -1611,7 +1692,7 @@ SiSOptions(ScrnInfoPtr pScrn)
 	  }
        }
 
-       /* CHTVType  (315/330/later series + Chrontel only)
+       /* CHTVType (315/330/later series + Chrontel only)
 	* Used for telling the driver if the TV output shall
 	* be 525i YPbPr or SCART.
 	*/
@@ -1842,12 +1923,6 @@ SiSOptions(ScrnInfoPtr pScrn)
 	  }
        }
 
-       if(xf86GetOptValBool(pSiS->Options, OPTION_XVMEMCPY, &val)) {
-	  pSiS->XvUseMemcpy = val ? TRUE : FALSE;
-	  xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Xv will %suse memcpy()\n",
-		val ? "" : "not ");
-       }
-
 #if defined(__i386__) || defined(__AMD64__) || defined(__amd64__) || defined(__x86_64__)
        if(xf86GetOptValBool(pSiS->Options, OPTION_XVBENCHCPY, &val)) {
 	  pSiS->BenchMemCpy = val ? TRUE : FALSE;
@@ -1866,9 +1941,6 @@ SiSOptions(ScrnInfoPtr pScrn)
 #endif
 #endif /* __i386__ || __AMD64__ || __amd64__ */
 
-#ifdef SIS_CP
-       SIS_CP_OPT_DOOPT
-#endif
 
     }  /* DualHead */
 
@@ -1889,20 +1961,22 @@ SiSOptions(ScrnInfoPtr pScrn)
        if(strptr != NULL) {
 	  if(!xf86NameCmp(strptr,"WIDE")) {
 	     pSiS->SiS_Pr->SiS_UseWide = 1;
+	     pSiS->havewide1 = TRUE;
 	  } else if(!xf86NameCmp(strptr,"NORMAL")) {
 	     pSiS->SiS_Pr->SiS_UseWide = 0;
+	     pSiS->havewide1 = TRUE;
 	  } else {
 	     SiS_PrintBadOpt(pScrn, strptr, OPTION_FORCE1ASPECT);
 	     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "%s:\n", validparm);
 	     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "\t\"NORMAL\" or \"WIDE\"\n");
           }
-	  if(pSiS->SiS_Pr->SiS_UseWide != -1) {
+	  if(pSiS->havewide1) {
 	     xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
 		"CRT1 (VGA) aspect ratio will be assumed %s\n",
 		pSiS->SiS_Pr->SiS_UseWide ? "wide" : "normal");
 	  }
        }
-       if(pSiS->SiS_Pr->SiS_UseWideCRT2 != -1) {
+       if(pSiS->havewide2) {
 	  xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
 		"CRT2 (VGA) aspect ratio will be assumed %s\n",
 		pSiS->SiS_Pr->SiS_UseWideCRT2 ? "wide" : "normal");
@@ -1929,7 +2003,7 @@ SiSOptions(ScrnInfoPtr pScrn)
     }
 
     if((pSiS->VGAEngine == SIS_300_VGA) || (pSiS->VGAEngine == SIS_315_VGA)) {
-       /* InternalModes (300/315/330 series only)
+       /* InternalModes (300/315/330 series and later only)
 	* The default behavior is to replace X's default modes with
 	* a mode list generated out of the known and supported modes. Use
 	* this option to disable this. NOT RECOMMENDED.
@@ -1937,23 +2011,69 @@ SiSOptions(ScrnInfoPtr pScrn)
        if(xf86GetOptValBool(pSiS->Options, OPTION_INTERNALMODES, &val)) {
 	  pSiS->noInternalModes = val ? FALSE : TRUE;
 	  if(pSiS->noInternalModes) {
-	     xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Usage of built-in modes is %s\n", disabledstr);
+	     xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
+			"Usage of built-in modes is %s\n", disabledstr);
 	  }
        }
 
+
     }
+
+#ifdef RANDR
+    /* Constant DPI (all chipsets) */
+    /* RandR causes a change of the screen's DPI on size changes
+     * by supplying constant mmWidth/mmHeight dimensions to
+     * the root window. Clients calculate the DPI of the
+     * screen by using mmWidth/mmHeight and projecting these
+     * on the current virtual screen size.
+     * I, for one, hate fonts being resized upon screen size
+     * changes (especially in windows which are already open
+     * when the size change takes place; leads to a nice font
+     * size mixture). If you share this feeling, enable this
+     * option and you will be presented with constant DPI values
+     * even upon size changes.
+     * If RR_GET_MODE_MM is not available, this done more or
+     * less automatically in MergedFB mode. We recalc the DPI
+     * often in order to keep them sane if the user switched
+     * from a normal (side by side) mode to a clone mode/screen
+     * size.
+     * The -dpi command line switch has a special meaning here.
+     * I herewith overrule the idea that -dpi means "use this
+     * dpi only for the default screen size". If you want that,
+     * please give a DisplaySize in your config file. -dpi is now
+     * stronger as it automatically enables constant DPI (unless
+     * the user disables it).
+     */
+    from = X_DEFAULT;
+    if(xf86GetOptValBool(pSiS->Options, OPTION_CONSTANTDPI, &pSiS->constantDPI)) {
+       from = X_CONFIG;
+    } else {
+       if(monitorResolution > 0) {
+	  pSiS->constantDPI = TRUE;
+	  from = X_CMDLINE;
+	  xf86DrvMsg(pScrn->scrnIndex, from,
+		"\"-dpi %d\" given in command line, assuming \"ConstantDPI\" set\n",
+		monitorResolution);
+       } else {
+	  pSiS->constantDPI = FALSE;
+       }
+    }
+    xf86DrvMsg(pScrn->scrnIndex, from,
+	"X server will %skeep DPI constant for all screen sizes\n",
+	pSiS->constantDPI ? "" : "not ");
+#endif
 
     /* ShadowFB */
     from = X_DEFAULT;
     if(xf86GetOptValBool(pSiS->Options, OPTION_SHADOW_FB, &pSiS->ShadowFB)) {
+       from = X_CONFIG;
 #ifdef SISMERGED
        if(pSiS->MergedFB) {
 	  pSiS->ShadowFB = FALSE;
 	  xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
 	      "Shadow Framebuffer not supported in MergedFB mode\n");
-       } else
+       }
 #endif
-	  from = X_CONFIG;
     }
     if(pSiS->ShadowFB) {
 	pSiS->NoAccel = TRUE;
@@ -1985,14 +2105,14 @@ SiSOptions(ScrnInfoPtr pScrn)
        } else {
 	  SiS_PrintBadOpt(pScrn, strptr, OPTION_ROTATE);
 	  xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	      "%s \"CW\" or \"CCW\"\n", validparm);
+	      "%s \"CW\" (clock-wise) or \"CCW\" (counter clock-wise)\n", validparm);
        }
 
        if(pSiS->Rotate) {
 	  pSiS->ShadowFB = TRUE;
 	  pSiS->NoAccel  = TRUE;
-	  pSiS->HWCursor = FALSE;
 	  pSiS->NoXvideo = TRUE;
+	  pSiS->HWCursor = FALSE;
 	  xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
 	      "Rotating screen %sclockwise (2D acceleration and Xv disabled)\n",
 	      (pSiS->Rotate == -1) ? "counter " : "");
@@ -2029,12 +2149,13 @@ SiSOptions(ScrnInfoPtr pScrn)
        if(pSiS->Reflect) {
 	  pSiS->ShadowFB = TRUE;
 	  pSiS->NoAccel  = TRUE;
-	  pSiS->HWCursor = FALSE;
 	  pSiS->NoXvideo = TRUE;
+	  pSiS->HWCursor = FALSE;
 	  xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
 	      "Reflecting screen (2D acceleration and Xv disabled)\n");
        }
     }
+
 
 #ifdef XF86DRI
     /* DRI */
@@ -2101,8 +2222,14 @@ SiSOptions(ScrnInfoPtr pScrn)
 
 	  /* Some Xv properties' defaults can be set by options */
 	  if(xf86GetOptValInteger(pSiS->Options, OPTION_XVDEFCONTRAST, &ival)) {
-	     if((ival >= 0) && (ival <= 7)) pSiS->XvDefCon = ival;
-	     else SiS_PrintIlRange(pScrn, OPTION_XVDEFCONTRAST, 0, 7, 0);
+	    if((pSiS->ChipType == SIS_662)||(pSiS->ChipType == SIS_671))
+	    {   if((ival >= 0) && (ival <= 255)) pSiS->XvDefCon = ival;
+            else SiS_PrintIlRange(pScrn, OPTION_XVDEFCONTRAST, 0, 255, 0);
+	    }
+	    else{
+            if((ival >= 0) && (ival <= 7)) pSiS->XvDefCon = ival;
+	        else SiS_PrintIlRange(pScrn, OPTION_XVDEFCONTRAST, 0, 7, 0);
+	    }
 	  }
 	  if(xf86GetOptValInteger(pSiS->Options, OPTION_XVDEFBRIGHTNESS, &ival)) {
 	     if((ival >= -128) && (ival <= 127)) pSiS->XvDefBri = ival;
@@ -2268,6 +2395,31 @@ SiSOptions(ScrnInfoPtr pScrn)
        }
     }
 
+
+	
+    /*chaoyu's modified: here we determind if use Futro timing, which is a special case*/
+    if(xf86GetOptValBool(pSiS->Options, OPTION_FUTRO_TIMING, &val)){
+	if (val) {
+		xf86DrvMsg(pScrn->scrnIndex, X_INFO,"We should use Futro special timimg\n");
+		pSiS->SiS_Pr->UseFutroTiming = TRUE;
+	}
+    }
+
+   /*Ivans added,using or non-using CRT1 detection refer to VBIOS*/
+    if(xf86GetOptValBool(pSiS->Options, OPTION_TRACEVGAMISCW, &val)){
+        if (val) {
+                xf86DrvMsg(pScrn->scrnIndex, X_INFO,"Trace CRT1 connection from MISCW. \n");
+                pSiS->trace_VGA_MISCW = TRUE;
+        }
+    }
+    /*Enable to use the panel and timing data on 1366x768 mode. Ivans@090109*/
+    if(xf86GetOptValBool(pSiS->Options, OPTION_USETIMING1366, &val)){
+        if(val){
+                xf86DrvMsg(pScrn->scrnIndex, X_INFO,"Using Special Timing 1366x768 with LVDS.\n");
+                pSiS->EnablePanel_1366x768 = TRUE;		
+        }
+    }
+
 }
 
 const OptionInfoRec *
@@ -2275,3 +2427,4 @@ SISAvailableOptions(int chipid, int busid)
 {
     return SISOptions;
 }
+

@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_dac.h,v 1.14 2005/07/15 15:35:18 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * DAC helper functions (Save/Restore, MemClk, etc)
  * Definitions and prototypes
@@ -38,10 +38,13 @@ void SISLoadPalette(ScrnInfoPtr pScrn, int numColors, int *indicies,
 void SiSCalcClock(ScrnInfoPtr pScrn, int clock, int max_VLD,
                         unsigned int *vclk);
 void SiSIODump(ScrnInfoPtr pScrn);
-int  SiSMemBandWidth(ScrnInfoPtr pScrn, Bool IsForCRT2);
+int  SiSMemBandWidth(ScrnInfoPtr pScrn, Bool IsForCRT2, Bool quiet);
 int  SiSMclk(SISPtr pSiS);
 void SiSRestoreBridge(ScrnInfoPtr pScrn, SISRegPtr sisReg);
 void SiS_UpdateGammaCRT2(ScrnInfoPtr pScrn);
+
+extern void	SISWaitRetraceCRT1(ScrnInfoPtr pScrn);
+extern void	SISWaitRetraceCRT2(ScrnInfoPtr pScrn);
 
 extern void	SiS6326SetTVReg(ScrnInfoPtr pScrn, CARD8 index, CARD8 data);
 extern UChar	SiS6326GetTVReg(ScrnInfoPtr pScrn, CARD8 index);

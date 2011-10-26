@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_dri.h,v 1.15 2005/08/16 22:08:50 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * SiS DRI wrapper
  *
@@ -48,15 +48,19 @@
 #define SIS_MAX_DRAWABLES 256
 #define SISIOMAPSIZE (64*1024)
 
+#include <pthread.h>
+
 typedef struct {
   int CtxOwner;
   int QueueLength;		/* (300: current, 315/etc: total) length of command queue */
   unsigned int AGPCmdBufNext;   /* (rename to AGPVtxBufNext) */
   unsigned int FrameCount;
 #ifdef SIS315DRI
+  unsigned int agpCmdBufWriteOffset;
   unsigned int  sharedWPoffset;	/* Offset to current queue position (shared with 2D) */
-  unsigned int  cmdQueueOffset;	/* Offset of start of command queue in VRAM */
 #endif
+  pthread_mutex_t CmdQ_Lock;
+
 } SISSAREAPriv, *SISSAREAPrivPtr;
 
 #define AGPVtxBufNext AGPCmdBufNext
@@ -68,9 +72,10 @@ typedef struct {
 typedef struct {
   drm_handle_t handle;
   drmSize size;
-#ifndef SISISXORG6899900
+/* chris, remove the variable for compatible with sizeof(SISDRIRec) in 3D driver(sis315_dri.so) */
+/*#ifndef SISISXORG6899900*/
   drmAddress map;
-#endif
+/*#endif*/
 } sisRegion, *sisRegionPtr;
 
 typedef struct {
@@ -94,10 +99,8 @@ typedef struct {
   unsigned int scrnX;			/* TODO: = width = pScrn->virtualX */
   unsigned int scrnY;			/* TODO: = height = pScrn->virtualY */
 #ifdef SIS315DRI
-  unsigned char *AGPCmdBufBase;
-  unsigned long AGPCmdBufAddr;
-  unsigned long AGPCmdBufOffset2;	/* (rename to AGPCmdBufOffset) */
-  unsigned int  AGPCmdBufSize2;		/* (rename to AGPCmdBufSize)   */
+  unsigned int  cmdQueueOffset;	        /* Offset of start of command queue in VRAM */                                            /* Size of VRAM command queue */
+  unsigned int  cmdQueueSize; 
   int deviceRev;			/* Chip revision */
 #endif
 } SISDRIRec, *SISDRIPtr;

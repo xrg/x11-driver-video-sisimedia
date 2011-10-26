@@ -14,33 +14,13 @@
 
 @SET_MAKE@
 
-#  Copyright 2005 Adam Jackson.
-#
-#  Permission is hereby granted, free of charge, to any person obtaining a
-#  copy of this software and associated documentation files (the "Software"),
-#  to deal in the Software without restriction, including without limitation
-#  on the rights to use, copy, modify, merge, publish, distribute, sub
-#  license, and/or sell copies of the Software, and to permit persons to whom
-#  the Software is furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice (including the next
-#  paragraph) shall be included in all copies or substantial portions of the
-#  Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
-#  ADAM JACKSON BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-#  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-#  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 VPATH = @srcdir@
 pkgdatadir = $(datadir)/@PACKAGE@
 pkglibdir = $(libdir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
-top_builddir = ..
+top_builddir = ../..
 am__cd = CDPATH="$${ZSH_VERSION+.}$(PATH_SEPARATOR)" && cd
 INSTALL = @INSTALL@
 install_sh_DATA = $(install_sh) -c -m 644
@@ -56,11 +36,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-@DRI_TRUE@am__append_1 = \
-@DRI_TRUE@         sis_dri.c \
-@DRI_TRUE@         sis_dri.h 
-
-subdir = src
+subdir = src/xvmc
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -75,26 +51,14 @@ am__vpath_adj = case $$p in \
     *) f=$$p;; \
   esac;
 am__strip_dir = `echo $$p | sed -e 's|^.*/||'`;
-am__installdirs = "$(DESTDIR)$(sis_drv_ladir)"
-sis_drv_laLTLIBRARIES_INSTALL = $(INSTALL)
-LTLIBRARIES = $(sis_drv_la_LTLIBRARIES)
-sis_drv_la_LIBADD =
-am__sis_drv_la_SOURCES_DIST = 300vtbl.h 310vtbl.h init301.c init301.h \
-	init.c initdef.h initextx.c initextx.h init.h oem300.h \
-	oem310.h osdef.h sis300_accel.c sis300_accel.h sis310_accel.c \
-	sis310_accel.h sis6326_video.c sis_3daccel.c sis_3daccel.h sis_accel.c sis_accel.h \
-	sis_common.h sis_cursor.c sis_cursor.h sis_config.h sis_dac.c sis_dac.h \
-	sis_dga.c sis_driver.c sis_driver.h sis.h sis_hwmc.c sis_memcpy.c sis_mergedfb.c\
-	sis_opt.c sis_regs.h sis_setup.c sis_shadow.c sis_utility.c \
-	sis_vb.h sis_vb.c sis_vga.c sis_video.c sis_video.h sis_videostr.h \
-	vgatypes.h vstruct.h sis_dri.c sis_dri.h
-@DRI_TRUE@am__objects_1 = sis_dri.lo
-am_sis_drv_la_OBJECTS = init301.lo init.lo initextx.lo sis300_accel.lo \
-	sis310_accel.lo sis6326_video.lo sis_3daccel.lo sis_accel.lo sis_cursor.lo \
-	sis_dac.lo sis_dga.lo sis_driver.lo sis_hwmc.lo sis_memcpy.lo sis_mergedfb.lo sis_opt.lo \
-	sis_setup.lo sis_shadow.lo sis_utility.lo sis_vb.lo sis_vga.lo \
-	sis_video.lo $(am__objects_1)
-sis_drv_la_OBJECTS = $(am_sis_drv_la_OBJECTS)
+am__installdirs = "$(DESTDIR)$(libdir)"
+libLTLIBRARIES_INSTALL = $(INSTALL)
+LTLIBRARIES = $(lib_LTLIBRARIES)
+libSiSXvMC_la_LIBADD =
+am__libSiSXvMC_la_SOURCES_DIST = SiSXvMC.c SiSXvMC.h
+@DRI_TRUE@am_libSiSXvMC_la_OBJECTS = libSiSXvMC_la-SiSXvMC.lo
+libSiSXvMC_la_OBJECTS = $(am_libSiSXvMC_la_OBJECTS)
+@DRI_TRUE@am_libSiSXvMC_la_rpath = -rpath $(libdir)
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -106,8 +70,8 @@ LTCOMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --tag=CC --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(sis_drv_la_SOURCES)
-DIST_SOURCES = $(am__sis_drv_la_SOURCES_DIST)
+SOURCES = $(libSiSXvMC_la_SOURCES)
+DIST_SOURCES = $(am__libSiSXvMC_la_SOURCES_DIST)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -191,8 +155,7 @@ PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
 PS2PDF = @PS2PDF@
 RANLIB = @RANLIB@
-RAWCPP = @RAWCPP@
-RAWCPPFLAGS = @RAWCPPFLAGS@
+SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
@@ -244,25 +207,12 @@ sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
+@DRI_TRUE@lib_LTLIBRARIES = libSiSXvMC.la
+@DRI_TRUE@libSiSXvMC_la_SOURCES = SiSXvMC.c \
+@DRI_TRUE@			 SiSXvMC.h
 
-# this is obnoxious:
-# -module lets us name the module exactly how we want
-# -avoid-version prevents gratuitous .0.0.0 version numbers on the end
-# _ladir passes a dummy rpath to libtool so the thing will actually link
-# TODO: -nostdlib/-Bstatic/-lgcc platform magic, not installing the .a, etc.
-AM_CFLAGS = @XORG_CFLAGS@ @DRI_CFLAGS@
-sis_drv_la_LTLIBRARIES = sis_drv.la
-sis_drv_la_LDFLAGS = -module -avoid-version
-sis_drv_ladir = @moduledir@/drivers
-sis_drv_la_SOURCES = 300vtbl.h 310vtbl.h init301.c init301.h init.c \
-	initdef.h initextx.c initextx.h init.h oem300.h oem310.h \
-	osdef.h sis300_accel.c sis300_accel.h sis310_accel.c \
-	sis310_accel.h sis6326_video.c sis_3daccel.c sis_3daccel.h sis_accel.c sis_accel.h \
-	sis_common.h sis_config.h sis_cursor.c sis_cursor.h sis_dac.c sis_dac.h \
-	sis_dga.c sis_driver.c sis_driver.h sis.h sis_hwmc.c sis_memcpy.c \
-	sis_mergedfb.c sis_opt.c sis_regs.h sis_setup.c sis_shadow.c sis_utility.c \
-	sis_vb.c sis_vb.h sis_vga.c sis_video.c sis_video.h sis_videostr.h \
-	vgatypes.h vstruct.h $(am__append_1)
+@DRI_TRUE@libSiSXvMC_la_CFLAGS = @XORG_CFLAGS@ @DRI_CFLAGS@ -I$(top_srcdir)/src -DTRUE=1 -DFALSE=0
+@DRI_TRUE@libSiSXvMC_la_LDFLAGS = -version-number 1:0:0
 all: all-am
 
 .SUFFIXES:
@@ -276,9 +226,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu  src/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu  src/xvmc/Makefile'; \
 	cd $(top_srcdir) && \
-	  $(AUTOMAKE) --gnu  src/Makefile
+	  $(AUTOMAKE) --gnu  src/xvmc/Makefile
 .PRECIOUS: Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
@@ -296,35 +246,35 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-install-sis_drv_laLTLIBRARIES: $(sis_drv_la_LTLIBRARIES)
+install-libLTLIBRARIES: $(lib_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
-	test -z "$(sis_drv_ladir)" || $(mkdir_p) "$(DESTDIR)$(sis_drv_ladir)"
-	@list='$(sis_drv_la_LTLIBRARIES)'; for p in $$list; do \
+	test -z "$(libdir)" || $(mkdir_p) "$(DESTDIR)$(libdir)"
+	@list='$(lib_LTLIBRARIES)'; for p in $$list; do \
 	  if test -f $$p; then \
 	    f=$(am__strip_dir) \
-	    echo " $(LIBTOOL) --mode=install $(sis_drv_laLTLIBRARIES_INSTALL) $(INSTALL_STRIP_FLAG) '$$p' '$(DESTDIR)$(sis_drv_ladir)/$$f'"; \
-	    $(LIBTOOL) --mode=install $(sis_drv_laLTLIBRARIES_INSTALL) $(INSTALL_STRIP_FLAG) "$$p" "$(DESTDIR)$(sis_drv_ladir)/$$f"; \
+	    echo " $(LIBTOOL) --mode=install $(libLTLIBRARIES_INSTALL) $(INSTALL_STRIP_FLAG) '$$p' '$(DESTDIR)$(libdir)/$$f'"; \
+	    $(LIBTOOL) --mode=install $(libLTLIBRARIES_INSTALL) $(INSTALL_STRIP_FLAG) "$$p" "$(DESTDIR)$(libdir)/$$f"; \
 	  else :; fi; \
 	done
 
-uninstall-sis_drv_laLTLIBRARIES:
+uninstall-libLTLIBRARIES:
 	@$(NORMAL_UNINSTALL)
-	@set -x; list='$(sis_drv_la_LTLIBRARIES)'; for p in $$list; do \
+	@set -x; list='$(lib_LTLIBRARIES)'; for p in $$list; do \
 	  p=$(am__strip_dir) \
-	  echo " $(LIBTOOL) --mode=uninstall rm -f '$(DESTDIR)$(sis_drv_ladir)/$$p'"; \
-	  $(LIBTOOL) --mode=uninstall rm -f "$(DESTDIR)$(sis_drv_ladir)/$$p"; \
+	  echo " $(LIBTOOL) --mode=uninstall rm -f '$(DESTDIR)$(libdir)/$$p'"; \
+	  $(LIBTOOL) --mode=uninstall rm -f "$(DESTDIR)$(libdir)/$$p"; \
 	done
 
-clean-sis_drv_laLTLIBRARIES:
-	-test -z "$(sis_drv_la_LTLIBRARIES)" || rm -f $(sis_drv_la_LTLIBRARIES)
-	@list='$(sis_drv_la_LTLIBRARIES)'; for p in $$list; do \
+clean-libLTLIBRARIES:
+	-test -z "$(lib_LTLIBRARIES)" || rm -f $(lib_LTLIBRARIES)
+	@list='$(lib_LTLIBRARIES)'; for p in $$list; do \
 	  dir="`echo $$p | sed -e 's|/[^/]*$$||'`"; \
 	  test "$$dir" != "$$p" || dir=.; \
 	  echo "rm -f \"$${dir}/so_locations\""; \
 	  rm -f "$${dir}/so_locations"; \
 	done
-sis_drv.la: $(sis_drv_la_OBJECTS) $(sis_drv_la_DEPENDENCIES) 
-	$(LINK) -rpath $(sis_drv_ladir) $(sis_drv_la_LDFLAGS) $(sis_drv_la_OBJECTS) $(sis_drv_la_LIBADD) $(LIBS)
+libSiSXvMC.la: $(libSiSXvMC_la_OBJECTS) $(libSiSXvMC_la_DEPENDENCIES) 
+	$(LINK) $(am_libSiSXvMC_la_rpath) $(libSiSXvMC_la_LDFLAGS) $(libSiSXvMC_la_OBJECTS) $(libSiSXvMC_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -332,30 +282,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/init.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/init301.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/initextx.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis300_accel.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis310_accel.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis6326_video.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_accel.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_cursor.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_dac.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_dga.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_dri.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_driver.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_memcpy.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_opt.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_setup.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_shadow.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_utility.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_vb.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_vga.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_video.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_mergedfb.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_3daccel.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sis_hwmc.Plo@am__quote@
-
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libSiSXvMC_la-SiSXvMC.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	if $(COMPILE) -MT $@ -MD -MP -MF "$(DEPDIR)/$*.Tpo" -c -o $@ $<; \
@@ -377,6 +304,13 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LTCOMPILE) -c -o $@ $<
+
+libSiSXvMC_la-SiSXvMC.lo: SiSXvMC.c
+@am__fastdepCC_TRUE@	if $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libSiSXvMC_la_CFLAGS) $(CFLAGS) -MT libSiSXvMC_la-SiSXvMC.lo -MD -MP -MF "$(DEPDIR)/libSiSXvMC_la-SiSXvMC.Tpo" -c -o libSiSXvMC_la-SiSXvMC.lo `test -f 'SiSXvMC.c' || echo '$(srcdir)/'`SiSXvMC.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/libSiSXvMC_la-SiSXvMC.Tpo" "$(DEPDIR)/libSiSXvMC_la-SiSXvMC.Plo"; else rm -f "$(DEPDIR)/libSiSXvMC_la-SiSXvMC.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='SiSXvMC.c' object='libSiSXvMC_la-SiSXvMC.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libSiSXvMC_la_CFLAGS) $(CFLAGS) -c -o libSiSXvMC_la-SiSXvMC.lo `test -f 'SiSXvMC.c' || echo '$(srcdir)/'`SiSXvMC.c
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -467,7 +401,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(LTLIBRARIES)
 installdirs:
-	for dir in "$(DESTDIR)$(sis_drv_ladir)"; do \
+	for dir in "$(DESTDIR)$(libdir)"; do \
 	  test -z "$$dir" || $(mkdir_p) "$$dir"; \
 	done
 install: install-am
@@ -496,7 +430,7 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-generic clean-libtool clean-sis_drv_laLTLIBRARIES \
+clean-am: clean-generic clean-libLTLIBRARIES clean-libtool \
 	mostlyclean-am
 
 distclean: distclean-am
@@ -515,9 +449,9 @@ info: info-am
 
 info-am:
 
-install-data-am: install-sis_drv_laLTLIBRARIES
+install-data-am:
 
-install-exec-am:
+install-exec-am: install-libLTLIBRARIES
 
 install-info: install-info-am
 
@@ -543,20 +477,20 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-info-am uninstall-sis_drv_laLTLIBRARIES
+uninstall-am: uninstall-info-am uninstall-libLTLIBRARIES
 
 .PHONY: CTAGS GTAGS all all-am check check-am clean clean-generic \
-	clean-libtool clean-sis_drv_laLTLIBRARIES ctags distclean \
+	clean-libLTLIBRARIES clean-libtool ctags distclean \
 	distclean-compile distclean-generic distclean-libtool \
 	distclean-tags distdir dvi dvi-am html html-am info info-am \
 	install install-am install-data install-data-am install-exec \
-	install-exec-am install-info install-info-am install-man \
-	install-sis_drv_laLTLIBRARIES install-strip installcheck \
+	install-exec-am install-info install-info-am \
+	install-libLTLIBRARIES install-man install-strip installcheck \
 	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	tags uninstall uninstall-am uninstall-info-am \
-	uninstall-sis_drv_laLTLIBRARIES
+	uninstall-libLTLIBRARIES
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

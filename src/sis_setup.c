@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_setup.c,v 1.17 2005/07/13 17:17:00 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * Basic hardware and memory detection
  *
@@ -99,6 +99,145 @@ static const struct _sis6326mclk {
 	{134, 0, 0x4a, 0xa3 }
 };
 
+#include "xf86.h"
+
+
+#ifdef XSERVER_LIBPCIACCESS
+struct pci_device *
+sis_get_device (int device)
+{
+    struct pci_slot_match bridge_match = {
+	0, 0, device, PCI_MATCH_ANY, 0
+    };
+    struct pci_device_iterator	*slot_iterator;
+    struct pci_device		*bridge;
+
+    slot_iterator = pci_slot_match_iterator_create (&bridge_match);
+    bridge = pci_device_next (slot_iterator);
+    pci_iterator_destroy (slot_iterator);
+    return bridge;
+}
+
+unsigned int
+sis_pci_read_device_u32(int device, int offset)
+{
+    struct pci_device *host_bridge = sis_get_device(device);
+    unsigned int result;
+
+    pci_device_cfg_read_u32(host_bridge, &result, offset);
+    return result;
+}
+
+unsigned char
+sis_pci_read_device_u8(int device, int offset)
+{
+    struct pci_device *host_bridge = sis_get_device(device);
+    unsigned char result;
+
+    pci_device_cfg_read_u8(host_bridge, &result, offset);
+    return result;
+}
+
+void
+sis_pci_write_host_bridge_u32(int offset, unsigned int value)
+{
+    struct pci_device *host_bridge = sis_get_device(0);
+    pci_device_cfg_write_u32(host_bridge, value, offset);
+}
+
+void
+sis_pci_write_host_bridge_u8(int offset, unsigned char value)
+{
+    struct pci_device *host_bridge = sis_get_device(0);
+    pci_device_cfg_write_u8(host_bridge, value, offset);
+}
+
+#else
+unsigned int
+sis_pci_read_device_u32(int device, int offset)
+{
+    PCITAG tag = pciTag(0, device, 0);
+    return pciReadLong(tag, offset);
+}
+
+unsigned char
+sis_pci_read_device_u8(int device, int offset)
+{
+    PCITAG tag = pciTag(0, device, 0);
+    return pciReadByte(tag, offset);
+}
+
+void
+sis_pci_write_host_bridge_u32(int offset, unsigned int value)
+{
+    pciWriteLong(0x00000000, offset, value);
+}
+
+void
+sis_pci_write_host_bridge_u8(int offset, unsigned char value)
+{
+    pciWriteByte(0x00000000, offset, value);
+}
+
+
+#endif
+
+unsigned int
+sis_pci_read_host_bridge_u32(int offset)
+{
+    return sis_pci_read_device_u32(0, offset);
+}
+
+unsigned char
+sis_pci_read_host_bridge_u8(int offset)
+{
+    return sis_pci_read_device_u8(0, offset);
+}
+
+static int sisESSPresent(ScrnInfoPtr pScrn)
+{
+  int flags = 0;
+#ifndef XSERVER_LIBPCIACCESS
+  int i;
+  pciConfigPtr pdptr, *systemPCIdevices = NULL;
+
+  if((systemPCIdevices = xf86GetPciConfigInfo())) {
+      i = 0;
+      while((pdptr = systemPCIdevices[i])) {
+	  if((pdptr->pci_vendor == 0x1274) &&
+	     ((pdptr->pci_device == 0x5000) ||
+	      ((pdptr->pci_device & 0xFFF0) == 0x1370))) {
+	      flags |= ESS137xPRESENT;
+	      break;
+	  }
+	  i++;
+      }
+  }
+  return flags;
+#else
+  struct pci_id_match id_match = { 0x1274, PCI_MATCH_ANY,
+				   PCI_MATCH_ANY, PCI_MATCH_ANY,
+				   PCI_MATCH_ANY, PCI_MATCH_ANY,
+				   0 };
+  struct pci_device_iterator *id_iterator;
+  struct pci_device *ess137x;
+
+  id_iterator = pci_id_match_iterator_create(&id_match);
+
+  ess137x = pci_device_next(id_iterator);  
+  while (ess137x) {
+      if ((ess137x->device_id == 0x5000) ||
+	  ((ess137x->device_id & 0xfff0) == 0x1370)) {
+	  flags |= ESS137xPRESENT;
+      }
+      ess137x = pci_device_next(id_iterator);  
+  }
+  return flags;
+#endif
+}
+
+
+
 /* For old chipsets, 5597, 6326, 530/620 */
 static void
 sisOldSetup(ScrnInfoPtr pScrn)
@@ -113,7 +252,7 @@ sisOldSetup(ScrnInfoPtr pScrn)
 #if 0
     UChar  newsr13, newsr28, newsr29;
 #endif
-    pciConfigPtr pdptr, *systemPCIdevices = NULL;
+
 
     if(pSiS->oldChipset <= OC_SIS6225) {
 	inSISIDXREG(SISSR, 0x0F, temp);
@@ -206,24 +345,19 @@ sisOldSetup(ScrnInfoPtr pScrn)
     pSiS->Flags &= ~(ESS137xPRESENT);
     if(pSiS->Chipset == PCI_CHIP_SIS530) {
        if(pSiS->oldChipset == OC_SIS530A) {
-          if((systemPCIdevices = xf86GetPciConfigInfo())) {
-	      i = 0;
-	      while((pdptr = systemPCIdevices[i])) {
-		 if((pdptr->pci_vendor == 0x1274) &&
-		    ((pdptr->pci_device == 0x5000) ||
-		     ((pdptr->pci_device & 0xFFF0) == 0x1370))) {
-		     pSiS->Flags |= ESS137xPRESENT;
-		     break;
-		 }
-		 i++;
-	      }
-	  }
+	   pSiS->Flags |= sisESSPresent(pScrn);
+       }
+       if(pSiS->Flags & ESS137xPRESENT) {
+	   xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+		      "SiS530/620: Found ESS device\n");
+       }
+    
+    
 	  if(pSiS->Flags & ESS137xPRESENT) {
 	     xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
 		 "SiS530/620: Found ESS device\n");
 	  }
        }
-    }
 
     pSiS->Flags &= ~(SECRETFLAG);
     if(pSiS->oldChipset >= OC_SIS5597) {
@@ -289,20 +423,20 @@ sis300Setup(ScrnInfoPtr pScrn)
     case PCI_CHIP_SIS540:
     case PCI_CHIP_SIS630:
 	pSiS->IsAGPCard = TRUE;
-	pciconfig = pciReadByte(0x00000000, 0x63);
+	pciconfig = sis_pci_read_host_bridge_u8(0x63);
 	if(pciconfig & 0x80) {
 	   pScrn->videoRam = (1 << (((pciconfig & 0x70) >> 4) + 21)) / 1024;
 	   pSiS->BusWidth = 64;
-	   pciconfig = pciReadByte(0x00000000, 0x64);
+	   pciconfig = sis_pci_read_host_bridge_u8(0x64);
 	   if((pciconfig & 0x30) == 0x30) {
 	      pSiS->BusWidth = 128;
 	      pScrn->videoRam <<= 1;
 	   }
-	   ramtype = pciReadByte(0x00000000,0x65);
+	   ramtype = sis_pci_read_host_bridge_u8(0x65);
 	   ramtype &= 0x03;
 	   xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
 		"Shared Memory Area is on DIMM%d\n", ramtype);
-	   ramtype = pciReadByte(0x00000000,(0x60 + ramtype));
+	   ramtype = sis_pci_read_host_bridge_u8(0x60 + ramtype);
 	   if(ramtype & 0x80) ramtype = 9;
 	   else               ramtype = 4;
 	   pSiS->UMAsize = pScrn->videoRam;
@@ -546,7 +680,7 @@ sis315Setup(ScrnInfoPtr pScrn)
 		pSiS->BusWidth);
 }
 
-/* For 550, 65x, 740, 661, 741, 660, 760, 761 */
+/* For 550, 65x, 740, 661, 741, 660, 760, 761, 670, 770 */
 static void
 sis550Setup(ScrnInfoPtr pScrn)
 {
@@ -562,13 +696,64 @@ sis550Setup(ScrnInfoPtr pScrn)
 
     pSiS->MemClock = SiSMclk(pSiS);
 
-    if(pSiS->Chipset == PCI_CHIP_SIS660) {
+    if(pSiS->Chipset == PCI_CHIP_SIS671){
+       inSISIDXREG(SISCR,0x79,config);
+       /* DDR */
+       ramtype = 8; 
 
-       if(pSiS->ChipType >= SIS_660) {
+       /* Bus Data Width*/
+       pSiS->BusWidth = (!(config & 0x0C))? 64 : 0;
+       if (pSiS->BusWidth == 0) xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+		       				"Bad Bus Width!\n");
+
+	/* share mem (UMA) size */
+       	pScrn->videoRam = 0;
+	unsigned int power = (config & 0xf0) >> 4;
+      	if(power){
+		for(pScrn->videoRam = 1; power>0 ; power--)
+			pScrn->videoRam *= 2;
+	}
+	pScrn->videoRam *= 1024; /* K */
+	pSiS->UMAsize = pScrn->videoRam;
+      	pSiS->SiS76xUMASize = pScrn->videoRam * 1024; /* byte */
+	xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+			"%dK shared video RAM (UMA)\n",
+			pScrn->videoRam);
+	
+
+
+	pSiS->ChipFlags |= SiSCF_760UMA;
+	pSiS->IsPCIExpress = TRUE;
+	alldone = TRUE;
+
+
+
+    } else if(pSiS->Chipset == PCI_CHIP_SIS670) {
+
+       pScrn->videoRam = 0;
+       pciconfig = sis_pci_read_host_bridge_u8(0x4c);
+       if(pciconfig & 0xe0) {
+	  pScrn->videoRam = (1 << (((pciconfig & 0xe0) >> 5) - 2)) * 32768;
+	  pSiS->ChipFlags |= SiSCF_760UMA;
+	  pSiS->SiS76xUMASize = pScrn->videoRam * 1024;
+	  pSiS->UMAsize = pScrn->videoRam;
+	  xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+		"%dK shared video RAM (UMA)\n",
+		pScrn->videoRam);
+	  pSiS->BusWidth = 64;
+          ramtype = 8;
+          alldone = TRUE;
+       }
+
+    } else if(pSiS->Chipset == PCI_CHIP_SIS660) {
+
+       if(pSiS->ChipType >= SIS_660&&pSiS->ChipType <= SIS_761) {
+
+          /* 660, 760 */
 
 	  /* UMA - shared fb */
 	  pScrn->videoRam = 0;
-	  pciconfig = pciReadByte(0x00000000, 0x4c);
+	  pciconfig = sis_pci_read_host_bridge_u8(0x4c);
 	  if(pciconfig & 0xe0) {
 	     pScrn->videoRam = (1 << (((pciconfig & 0xe0) >> 5) - 2)) * 32768;
 	     pSiS->ChipFlags |= SiSCF_760UMA;
@@ -580,7 +765,8 @@ sis550Setup(ScrnInfoPtr pScrn)
 	  }
 
 	  /* LFB - local framebuffer: PCI reg hold total RAM (but configurable in BIOS) */
-	  pciconfig = pciReadByte(0x00000800, 0xcd);
+	  /* TODO */
+	  pciconfig = sis_pci_read_device_u8(1, 0xcd);
 	  pciconfig = (pciconfig >> 1) & 0x03;
 	  i = 0;
 	  if(pciconfig == 0x01)      i = 32768;
@@ -621,19 +807,19 @@ sis550Setup(ScrnInfoPtr pScrn)
 	     pSiS->IsPCIExpress = TRUE;
 	  }
 
-       } else {  /* 661, 741 */
+       } else if(pSiS->ChipType >= SIS_662){
+
+	  /* 662 */
 
 	  int dimmnum;
 
-	  if(pSiS->ChipType == SIS_741) {
-	     dimmnum = 4;
-	  } else {
-	     dimmnum = 3;
+	  if(pSiS->ChipType == SIS_662) {
+	     dimmnum = 2;
 	  }
 
-	  pciconfig = pciReadByte(0x00000000, 0x64);
+	  pciconfig = sis_pci_read_host_bridge_u8(0x64);
 	  if(pciconfig & 0x80) {
-	     pScrn->videoRam = (1 << (((pciconfig & 0x70) >> 4) - 1)) * 32768;
+	     pScrn->videoRam = (1 << (((pciconfig & 0x60) >> 5) )) * 32768;
 	     pSiS->UMAsize = pScrn->videoRam;
 	     if((pScrn->videoRam < 32768) || (pScrn->videoRam > (128 * 1024))) {
 		xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
@@ -643,7 +829,45 @@ sis550Setup(ScrnInfoPtr pScrn)
 		pSiS->BusWidth = 64;
 		for(i = 0; i <= (dimmnum - 1); i++) {
 		   if(pciconfig & (1 << i)) {
-		      temp = pciReadByte(0x00000000, 0x60 + i);
+		      temp = sis_pci_read_host_bridge_u8(0x60 + i);
+		      xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+			  "DIMM%d is %s SDRAM\n",
+			  i, (temp & 0x40) ? "DDR2" : "non-DDR2");
+		   } else {
+		      xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+			  "DIMM%d is not installed\n", i);
+		   }
+		}
+		alldone = FALSE;
+	     }
+          }
+
+
+       }else{
+	  /* 661, 741 */
+
+	  int dimmnum;
+
+	  if(pSiS->ChipType == SIS_741) {
+	     dimmnum = 4;
+	  } else {
+	     dimmnum = 3;
+	  }
+
+	  pciconfig = sis_pci_read_host_bridge_u8(0x64);
+	  if(pciconfig & 0x80) {
+	     pScrn->videoRam = (1 << (((pciconfig & 0x70) >> 4) - 1)) * 32768;
+
+	     pSiS->UMAsize = pScrn->videoRam;
+	     if((pScrn->videoRam < 32768) || (pScrn->videoRam > (128 * 1024))) {
+		xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
+			"Illegal video RAM size (%dK) detected, using BIOS-provided info\n",
+			pScrn->videoRam);
+	     } else {
+		pSiS->BusWidth = 64;
+		for(i = 0; i <= (dimmnum - 1); i++) {
+		   if(pciconfig & (1 << i)) {
+		      temp = sis_pci_read_host_bridge_u8(0x60 + i);
 		      xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
 			  "DIMM%d is %s SDRAM\n",
 			  i, (temp & 0x40) ? "DDR" : "SDR");
@@ -652,7 +876,7 @@ sis550Setup(ScrnInfoPtr pScrn)
 			  "DIMM%d is not installed\n", i);
 		   }
 		}
-		pciconfig = pciReadByte(0x00000000, 0x7c);
+		pciconfig = sis_pci_read_host_bridge_u8(0x7c);
 		ramtype = (pciconfig & 0x02) ? 8 : 4;
 		alldone = TRUE;
 	     }
@@ -662,14 +886,16 @@ sis550Setup(ScrnInfoPtr pScrn)
 
     } else if(pSiS->Chipset == PCI_CHIP_SIS650) {
 
-       pciconfig = pciReadByte(0x00000000, 0x64);
+       /* 65x, 741 */
+
+       pciconfig = sis_pci_read_host_bridge_u8(0x64);
        if(pciconfig & 0x80) {
           pScrn->videoRam = (1 << (((pciconfig & 0x70) >> 4) + 22)) / 1024;
 	  pSiS->UMAsize = pScrn->videoRam;
 	  pSiS->BusWidth = 64;
 	  for(i=0; i<=3; i++) {
 	     if(pciconfig & (1 << i)) {
-		temp = pciReadByte(0x00000000, 0x60 + i);
+		temp = sis_pci_read_host_bridge_u8(0x60 + i);
 		xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
 		   "DIMM%d is %s SDRAM\n",
 		   i, (temp & 0x40) ? "DDR" : "SDR");
@@ -678,7 +904,7 @@ sis550Setup(ScrnInfoPtr pScrn)
 		   "DIMM%d is not installed\n", i);
 	     }
 	  }
-	  pciconfig = pciReadByte(0x00000000, 0x7c);
+	  pciconfig = sis_pci_read_host_bridge_u8(0x7c);
 	  if(pciconfig & 0x02) ramtype = 8;
 	  else                 ramtype = 4;
 	  alldone = TRUE;
@@ -686,12 +912,14 @@ sis550Setup(ScrnInfoPtr pScrn)
 
     } else {
 
-       pciconfig = pciReadByte(0x00000000, 0x63);
+       /* 550 */
+
+       pciconfig = sis_pci_read_host_bridge_u8(0x63);
        if(pciconfig & 0x80) {
 	  pScrn->videoRam = (1 << (((pciconfig & 0x70) >> 4) + 21)) / 1024;
 	  pSiS->UMAsize = pScrn->videoRam;
 	  pSiS->BusWidth = 64;
-	  ramtype = pciReadByte(0x00000000,0x65);
+          ramtype = sis_pci_read_host_bridge_u8(0x65);
 	  ramtype &= 0x01;
 	  xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
 	   	"Shared Memory Area is on DIMM%d\n", ramtype);
@@ -708,14 +936,48 @@ sis550Setup(ScrnInfoPtr pScrn)
        pSiS->SiS76xLFBSize = pSiS->SiS76xUMASize = 0;
        pSiS->UMAsize = pSiS->LFBsize = 0;
 
-       if(pSiS->Chipset == PCI_CHIP_SIS660) {
+       if(pSiS->Chipset == PCI_CHIP_SIS670) {
+
+          pScrn->videoRam = 0;
+          inSISIDXREG(SISCR, 0x78, config);
+	  if(config & 0xf0) {
+	     pScrn->videoRam = (1 << ((config & 0xf0) >> 4)) * 1024;
+	     pSiS->UMAsize = pScrn->videoRam;
+	     pSiS->ChipFlags |= SiSCF_760UMA;
+	     pSiS->SiS76xUMASize = pScrn->videoRam * 1024;
+	     xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+				"%dK shared video RAM (UMA)\n",
+				pScrn->videoRam);
+	  }
+
+       } else if(pSiS->Chipset == PCI_CHIP_SIS660) {
+
 	  inSISIDXREG(SISCR, 0x79, config);
+	  
 	  pSiS->BusWidth = (config & 0x04) ? 128 : 64;
-	  ramtype = (config & 0x01) ? 8 : 4;
+          if(pSiS->ChipType == SIS_662){
+              switch (config&0x03){
+                  case 1:
+                  ramtype = 8;
+                  break;
+				  
+                  case 2:
+                  default: 
+                  ramtype = 0xa;
+
+                  break;
+              }
+          }else{
+              ramtype = (config & 0x01) ? 8 : 4;
+          }
+
 	  if(pSiS->ChipType >= SIS_660) {
-	     pScrn->videoRam = 0;
 	     if(config & 0xf0) {
-		pScrn->videoRam = (1 << ((config & 0xf0) >> 4)) * 1024;
+                if(pScrn->videoRam!=((1 << ((config & 0xf0) >> 4)) * 1024)){
+		    xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
+				"The size we got from SBIOS is defferent than VBIOS.  And we take the value from VBIOS\n");
+                    pScrn->videoRam = (1 << ((config & 0xf0) >> 4)) * 1024;
+		}
 		pSiS->UMAsize = pScrn->videoRam;
 		pSiS->ChipFlags |= SiSCF_760UMA;
 		pSiS->SiS76xUMASize = pScrn->videoRam * 1024;
@@ -723,27 +985,31 @@ sis550Setup(ScrnInfoPtr pScrn)
 				"%dK shared video RAM (UMA)\n",
 				pScrn->videoRam);
 	     }
-	     inSISIDXREG(SISCR, 0x78, config);
-	     config &= 0x30;
-	     if(config) {
-	        i = 0;
-		if(config == 0x10)      i = 32768;
-		else if(config == 0x30) i = 65536;
-		if(i) {
-		   xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
-				"%dK configured local video RAM (LFB)\n", i);
-		   pScrn->videoRam += i;
-		   pSiS->SiS76xLFBSize = i * 1024;
-		   pSiS->LFBsize = i;
-		   pSiS->ChipFlags |= SiSCF_760LFB;
 
-		}
-	     }
+             if(pSiS->ChipType < SIS_662){		 
+	         inSISIDXREG(SISCR, 0x78, config);
+                 config &= 0x30;
+                 if(config) {
+                    i = 0;
+                    if(config == 0x10)      i = 32768;
+                    else if(config == 0x30) i = 65536;
+                    if(i) {
+                       xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
+                             "%dK configured local video RAM (LFB)\n", i);
+                       pScrn->videoRam += i;
+                       pSiS->SiS76xLFBSize = i * 1024;
+                       pSiS->LFBsize = i;
+                       pSiS->ChipFlags |= SiSCF_760LFB;
+                    }
+                 }
+             }
 	  } else {
 	     pScrn->videoRam = (1 << ((config & 0xf0) >> 4)) * 1024;
 	     pSiS->UMAsize = pScrn->videoRam;
 	  }
+
        } else {
+
 	  xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
 	      "Shared Memory Area is disabled - awaiting doom\n");
 	  inSISIDXREG(SISSR, 0x14, config);
@@ -759,11 +1025,18 @@ sis550Setup(ScrnInfoPtr pScrn)
        }
     }
 
-    /* These need special attention: Memory controller in CPU, hence
+    /* These (might) need special attention: Memory controller in CPU, hence
      * - no DDR * 2 for bandwidth calculation,
      * - overlay magic (bandwidth dependent one/two overlay stuff)
      */
-    if((pSiS->ChipType >= SIS_760) && (pSiS->ChipType <= SIS_770)) {
+    switch(pSiS->ChipType) {
+    case SIS_760:
+#ifdef SIS761MEMFIX
+    case SIS_761:
+#endif
+#ifdef SIS770MEMFIX
+    case SIS_770:
+#endif
        if(!(pSiS->ChipFlags & SiSCF_760LFB)) {
 	  ddrtimes2 = FALSE;
 	  pSiS->SiS_SD2_Flags |= SiS_SD2_SUPPORT760OO;
@@ -773,6 +1046,7 @@ sis550Setup(ScrnInfoPtr pScrn)
     /* DDR -> Mclk * 2 - needed for bandwidth calculation */
     if(ddrtimes2) {
        if(ramtype == 8) pSiS->MemClock *= 2;
+       if(ramtype == 0xa) pSiS->MemClock *= 2;	   
     }
 
     xf86DrvMsg(pScrn->scrnIndex, X_PROBED,
@@ -798,7 +1072,7 @@ SiSSetup(ScrnInfoPtr pScrn)
     pSiS->SiS76xLFBSize = pSiS->SiS76xUMASize = 0;
     pSiS->UMAsize = pSiS->LFBsize = 0;
 
-    switch (SISPTR(pScrn)->Chipset) {
+    switch(pSiS->Chipset) {
     case PCI_CHIP_SIS300:
     case PCI_CHIP_SIS630:  /* +730 */
     case PCI_CHIP_SIS540:
@@ -814,8 +1088,10 @@ SiSSetup(ScrnInfoPtr pScrn)
     	sis315Setup(pScrn);
 	break;
     case PCI_CHIP_SIS550:
-    case PCI_CHIP_SIS650: /* + 740,M650,651 */
-    case PCI_CHIP_SIS660: /* + (M)661,(M)741,(M)760(GX), (M)761(GX), 770? */
+    case PCI_CHIP_SIS650: /* + 740, M650, 651 */
+    case PCI_CHIP_SIS660: /* + (M)661, (M)741, (M)760(GX), (M)761(GX) */
+    case PCI_CHIP_SIS670: /* 670, 770 */
+    case PCI_CHIP_SIS671: /* 671, 771 */
         sis550Setup(pScrn);
 	break;
     case PCI_CHIP_SIS5597:

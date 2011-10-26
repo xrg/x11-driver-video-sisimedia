@@ -848,6 +848,10 @@ static char *SiS_GetCPUFreq(ScrnInfoPtr pScrn, char *buf, double *cpuFreq)
 #include <setjmp.h>
 #endif
 
+#ifdef XSERVER_LIBPCIACCESS
+#include <setjmp.h>
+#endif
+
 static jmp_buf sigill_return;
 
 static void sigill_handler(void)
@@ -867,11 +871,11 @@ static Bool CheckOSforSSE(ScrnInfoPtr pScrn)
 
     xf86InterceptSigIll(&sigill_handler);
 
-    if(setjmp(sigill_return)) {
-       signo = 4;
-    } else {
-       __asm__ __volatile__ (" xorps %xmm0, %xmm0\n");
-       /* __asm__ __volatile__ (" .byte 0xff\n"); */  /* For test */
+   	 if(setjmp(sigill_return) ) {
+    	   signo = 4;
+   	 } else {
+     	  __asm__ __volatile__ (" xorps %xmm0, %xmm0\n");
+     	  /* __asm__ __volatile__ (" .byte 0xff\n"); */  /* For test */
     }
 
     xf86InterceptSigIll(NULL);
@@ -1057,7 +1061,7 @@ SiSVidCopyInitGen(ScreenPtr pScreen, SISMCFuncData *MCFunctions, vidCopyFunc *UM
     SISPtr pSiS = SISPTR(pScrn);
     void *fbhandle = NULL;
     char  *frqBuf = NULL;
-    UChar *buf1, *buf2, *buf3;
+    UChar *buf1 = NULL, *buf2 = NULL, *buf3 = NULL;
     double cpuFreq = 0.0;
     unsigned int myCPUflags = pSiS->CPUFlags | Def_FL;
     int best, secondbest;

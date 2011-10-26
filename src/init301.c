@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/init301.c,v 1.38 2005/09/17 23:07:16 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * Mode initializing code (CRT2 section)
  * for SiS 300/305/540/630/730,
@@ -140,6 +140,7 @@ SiS_SetRegSR11ANDOR(struct SiS_Private *SiS_Pr, unsigned short DataAND,
 /*********************************************/
 
 #ifdef SIS315H
+/* This function is used to get vesa timeing table offset in VBIOS*/
 static unsigned char *
 GetLCDStructPtr661(struct SiS_Private *SiS_Pr)
 {
@@ -160,21 +161,33 @@ GetLCDStructPtr661(struct SiS_Private *SiS_Pr)
 
       if(SiS_Pr->ChipType < SIS_661) reg = 0x3c;
       else                           reg = 0x7d;
-
-      idx = (SiS_GetReg(SiS_Pr->SiS_P3d4,reg) & 0x1f) * 26;
-
-      if(idx < (8*26)) {
-         myptr = (unsigned char *)&SiS_LCDStruct661[idx];
+      if(SiS_Pr->ChipType >= SIS_761)
+      {
+          idx = (SiS_GetReg(SiS_Pr->SiS_P3d4,reg) & 0x1f) * 25;
+          romindex = SISGETROMW(0x9a);
+          if(romindex) {
+              romindex += idx;
+              myptr = &ROMAddr[romindex];
+          }	
       }
-      romindex = SISGETROMW(0x100);
-      if(romindex) {
-         romindex += idx;
-         myptr = &ROMAddr[romindex];
+      else
+      {
+          idx = (SiS_GetReg(SiS_Pr->SiS_P3d4,reg) & 0x1f) * 26;
+          if(idx < (8*26)) {
+              myptr = (unsigned char *)&SiS_LCDStruct661[idx];
+          }
+          romindex = SISGETROMW(0x100);
+          if(romindex) {
+              romindex += idx;
+              myptr = &ROMAddr[romindex];
+          }	
       }
    }
    return myptr;
 }
 
+
+/* This function is used to get LCDID table offset in VBIOS*/
 static unsigned short
 GetLCDStructPtr661_2(struct SiS_Private *SiS_Pr)
 {
@@ -187,15 +200,25 @@ GetLCDStructPtr661_2(struct SiS_Private *SiS_Pr)
     * of machines with a 301C and a panel that does not support DDC)
     * use the BIOS data as well.
     */
-
-   if((SiS_Pr->SiS_ROMNew) &&
-      ( (SiS_Pr->SiS_VBType & VB_SISLVDS) ||
-        (!SiS_Pr->PanelSelfDetected) )) {
-      romptr = SISGETROMW(0x102);
-      romptr += ((SiS_GetReg(SiS_Pr->SiS_P3d4,0x36) >> 4) * SiS_Pr->SiS661LCD2TableSize);
-   }
-
-   return romptr;
+    if(SiS_Pr->ChipType < SIS_761)
+    {
+        if((SiS_Pr->SiS_ROMNew) &&
+         ( (SiS_Pr->SiS_VBType & VB_SISLVDS) ||
+         (!SiS_Pr->PanelSelfDetected) )) {
+            romptr = SISGETROMW(0x102);
+            romptr += ((SiS_GetReg(SiS_Pr->SiS_P3d4,0x36) >> 4) * SiS_Pr->SiS661LCD2TableSize);
+        }
+    }
+    else
+    {
+        if((SiS_Pr->SiS_ROMNew) &&
+          ( (SiS_Pr->SiS_VBType & VB_SISLVDS) ||
+          (!SiS_Pr->PanelSelfDetected) )) {
+          romptr = SISGETROMW(0x9c);
+          romptr += ((SiS_GetReg(SiS_Pr->SiS_P3d4,0x39) & 0x7C)>>2)*SiS_Pr->SiS661LCD2TableSize;
+        }
+    }
+    return romptr;
 }
 #endif
 
@@ -755,7 +778,9 @@ SiS_IsDualLink(struct SiS_Private *SiS_Pr)
    if(SiS_Pr->ChipType >= SIS_315H) {
       if((SiS_CRT2IsLCD(SiS_Pr)) ||
          (SiS_IsVAMode(SiS_Pr))) {
+         if(SiS_CheckLVDS( SiS_Pr)){ /* karma@080401 check LVDS to enable DualLink */
 	 if(SiS_Pr->SiS_LCDInfo & LCDDualLink) return TRUE;
+         }
       }
    }
 #endif
@@ -876,14 +901,10 @@ SiS_IsLCDOrLCDA(struct SiS_Private *SiS_Pr)
 static BOOLEAN
 SiS_HaveBridge(struct SiS_Private *SiS_Pr)
 {
-   unsigned short flag;
-
-   if(SiS_Pr->SiS_IF_DEF_LVDS == 1) {
+   if((SiS_Pr->SiS_IF_DEF_LVDS == 1) || (SiS_Pr->SiS_VBType & VB_SISVB)) {
       return TRUE;
-   } else if(SiS_Pr->SiS_VBType & VB_SISVB) {
-      flag = SiS_GetReg(SiS_Pr->SiS_Part4Port,0x00);
-      if((flag == 1) || (flag == 2)) return TRUE;
    }
+
    return FALSE;
 }
 
@@ -986,7 +1007,7 @@ SiS_GetVBInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
 		 /* Reset LCDA setting if not driver mode */
 		 SiS_SetRegAND(SiS_Pr->SiS_P3d4,0x38,0xfc);
 	      }
-	      if(IS_SIS650) {
+	      if(SiS_Pr->ChipType == SIS_650) {
 		 if(SiS_Pr->SiS_UseLCDA) {
 		    if(SiS_GetReg(SiS_Pr->SiS_P3d4,0x5f) & 0xF0) {
 		       if((ModeNo <= 0x13) || (!(SiS_GetReg(SiS_Pr->SiS_P3d4,0x31) & (DriverMode >> 8)))) {
@@ -1486,6 +1507,10 @@ SiS_GetBIOSLCDResInfo(struct SiS_Private *SiS_Pr)
    case Panel_1280x768_2: temp = Panel_1280x768;    break;
    case Panel_1280x800_2: temp = Panel_1280x800;    break;
    case Panel_1280x854:   temp = Panel661_1280x854; break;
+#if 0
+   case Panel_1440x900:   temp = Panel661_1400x900; break;
+   case Panel_1920x1200:  temp = Panel661_1920x1200; break;
+#endif
    }
    return temp;
 }
@@ -1510,7 +1535,10 @@ SiS_GetLCDInfoBIOS(struct SiS_Private *SiS_Pr)
 #endif
 
    if((ROMAddr = GetLCDStructPtr661(SiS_Pr))) {
-      if((temp = SISGETROMW(6)) != SiS_Pr->PanelHT) {
+      #ifdef TWDEBUG	   
+      xf86DrvMsg(0,X_INFO,"[GetLCDStructPtr661==ROMAddr]:Enter if loop.\n");
+      #endif
+	 if((temp = SISGETROMW(6)) != SiS_Pr->PanelHT) {
 	 SiS_Pr->SiS_NeedRomModeData = TRUE;
 	 SiS_Pr->PanelHT  = temp;
       }
@@ -1523,13 +1551,27 @@ SiS_GetLCDInfoBIOS(struct SiS_Private *SiS_Pr)
       SiS_Pr->PanelVRS = SISGETROMW(14);
       SiS_Pr->PanelVRE = SISGETROMW(16);
       SiS_Pr->PanelVCLKIdx315 = VCLK_CUSTOM_315;
-      SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].CLOCK =
-	 SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].CLOCK = (unsigned short)((unsigned char)ROMAddr[18]);
-      SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2B =
-	 SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_A = ROMAddr[19];
-      SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2C =
-	 SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_B = ROMAddr[20];
-
+      if(SiS_Pr->ChipType < SIS_761)
+      {
+          SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].CLOCK =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].CLOCK = (unsigned short)((unsigned char)ROMAddr[18]);
+          SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2B =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_A = ROMAddr[19];
+          SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2C =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_B = ROMAddr[20];	  
+      }
+      else
+      {
+        #ifdef TWDEBUG
+	      xf86DrvMsg(0,X_INFO,"[ VCLK_CUSTOM_315.CLOCK==ROMAddr[20] ]:Enter else loop.\n");
+        #endif      
+	  SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].CLOCK =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].CLOCK = (unsigned short)((unsigned char)ROMAddr[20]);
+          SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2B =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_A = ROMAddr[18];
+          SiS_Pr->SiS_VCLKData[VCLK_CUSTOM_315].SR2C =
+	  SiS_Pr->SiS_VBVCLKData[VCLK_CUSTOM_315].Part4_B = ROMAddr[19];	  
+      }
 #ifdef SIS_XORG_XF86
 #ifdef TWDEBUG
       xf86DrvMsg(0, X_INFO, "Paneldata BIOS:  [%d %d] [H %d %d] [V %d %d] [C %d 0x%02x 0x%02x]\n",
@@ -1612,6 +1654,10 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
      SiS_Pr->SiS_LCDTypeInfo = (temp & 0x0F) - 1;
   }
   temp &= 0x0f;
+// PCF =====================================================================================================================
+  if(temp == 0x06)
+  	temp = Panel_1600x1200;
+//==========================================================================================================================
 #ifdef SIS300
   if(SiS_Pr->ChipType < SIS_315H) {
      /* Very old BIOSes only know 7 sizes (NetVista 2179, 1.01g) */
@@ -1623,6 +1669,10 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
   }
 #endif
 
+#ifdef TWDEBUG
+  xf86DrvMsg(0,X_INFO,"[SiS_GetLCDResInfo]:Panel661=0x%x,Panel_ID=0x%x,ModeNo=0x%x,ModeIdIndex=0x%x,modeflag=0x%x.\n",temp,SiS_Pr->SiS_LCDTypeInfo,ModeNo,ModeIdIndex,modeflag);
+#endif
+
   /* Translate to our internal types */
 #ifdef SIS315H
   if(SiS_Pr->ChipType == SIS_550) {
@@ -1631,6 +1681,10 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
      else if(temp == Panel310_320x240_3) temp = Panel_320x240_3;
   } else if(SiS_Pr->ChipType >= SIS_661) {
      if(temp == Panel661_1280x854)       temp = Panel_1280x854;
+#if 0
+     else if(temp == Panel661_1440x900)  temp = Panel_1440x900;
+     else if(temp == Panel661_1920x1200) temp = Panel_1920x1200;
+#endif
   }
 #endif
 
@@ -1638,14 +1692,27 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
      if(temp == Panel310_1280x768) {
         temp = Panel_1280x768_2;
      }
+     if((temp == Panel661_Custom) && (SiS_Pr->SiS_LCDTypeInfo == Panel661_Custom)){
+        temp = Panel_1366x768; /*1366x768 translated from 0x0f.(not used ROM) Ivans@090109*/
+     }
+     if(temp == Panel661_640x480){ /*for SiS_ROMNew failed. Ivans@161208*/
+        temp =Panel_1440x900;      /*new X (X7.4,Xserver1.5)on Ubuntu810*/
+     }                             /*it caused the ROM found failed.(TODO PCI_REWORK)*/
      if(SiS_Pr->SiS_ROMNew) {
 	if(temp == Panel661_1280x800) {
 	   temp = Panel_1280x800_2;
+	}
+	if(temp == Panel661_640x480){ /* Ivans add CR36 translate 1440x900. */
+	   temp = Panel_1440x900;
 	}
      }
   }
 
   SiS_Pr->SiS_LCDResInfo = temp;
+
+#ifdef TWDEBUG
+  xf86DrvMsg(0,X_INFO,"[SiS_GetLCDResInfo]:SiS_LCDResInfo=0x%x. \n",SiS_Pr->SiS_LCDResInfo);
+#endif
 
 #ifdef SIS300
   if(SiS_Pr->SiS_IF_DEF_LVDS == 1) {
@@ -1659,6 +1726,19 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
   }
 #endif
 
+  /* chaoyu add: we try to support 800x600 panel on 302LV */
+   if(SiS_Pr->SiS_VBType & (VB_SIS302LV | VB_SIS302ELV)){
+#ifdef SISMERGED
+   	if(!(SiS_Pr->MergedFB))	/* ToDo: Single LCD should be added */
+#endif
+		SiS_Pr->SiS_PanelMin301 = Panel_800x600;
+#ifdef SISMERGED
+	else
+		SiS_SetReg(SiS_Pr->SiS_P3d4, 0x7d, 0x00);
+#endif
+   }
+
+   
   if(SiS_Pr->SiS_VBType & VB_SISVB) {
      if(SiS_Pr->SiS_LCDResInfo < SiS_Pr->SiS_PanelMin301)
 	SiS_Pr->SiS_LCDResInfo = SiS_Pr->SiS_PanelMin301;
@@ -1670,6 +1750,10 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
   temp = SiS_GetReg(SiS_Pr->SiS_P3d4,0x37);
   SiS_Pr->SiS_LCDInfo = temp & ~0x000e;
   /* Need temp below! */
+
+#ifdef TWDEBUG
+ xf86DrvMsg(0,X_INFO,"[SiS_GetLCDResInfo]:SiS_CR37_LCDInfo_RECORD=0x%x.\n",temp);
+#endif
 
   /* These must/can't scale no matter what */
   switch(SiS_Pr->SiS_LCDResInfo) {
@@ -1696,10 +1780,16 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
      }
      if(SiS_Pr->SiS_VBType & VB_SISDUALLINK) {
 	if(SiS_Pr->SiS_ROMNew) {
-	   if(temp & 0x02) SiS_Pr->SiS_LCDInfo |= LCDDualLink;
+	    if(SiS_Pr->ChipType < SIS_761){
+	        if((temp & 0x02) && SiS_CheckLVDS(SiS_Pr)) SiS_Pr->SiS_LCDInfo |= LCDDualLink;/* karma@080401 check LVDS to enable DualLink */
+	    }else{
+      	    if((temp & 0x04) && SiS_CheckLVDS(SiS_Pr)) SiS_Pr->SiS_LCDInfo |= LCDDualLink;/* karma@080401 check LVDS to enable DualLink */
+	    }
 	} else if((myptr = GetLCDStructPtr661(SiS_Pr))) {
-	   if(myptr[2] & 0x01) SiS_Pr->SiS_LCDInfo |= LCDDualLink;
-	}
+	   if((myptr[2] & 0x01) && SiS_CheckLVDS(SiS_Pr)) SiS_Pr->SiS_LCDInfo |= LCDDualLink;/* karma@080401 check LVDS to enable DualLink */
+	} else if(SiS_Pr->SiS_LCDResInfo == Panel_1440x900){/*for ROMNew failed. Ivans@161208*/
+       if(SiS_CheckLVDS(SiS_Pr)) SiS_Pr->SiS_LCDInfo |= LCDDualLink;/*it caused panel blur.*/
+    }
      }
   } else if(SiS_Pr->ChipType >= SIS_315H) {
      if(SiS_Pr->SiS_LCDInfo & DontExpandLCD) {
@@ -1710,18 +1800,20 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 	temp = SiS_GetReg(SiS_Pr->SiS_P3d4,0x35);
 	if(temp & 0x01) SiS_Pr->SiS_LCDInfo |= LCDRGB18Bit;
 	if(SiS_Pr->SiS_VBType & VB_SISDUALLINK) {
-	   if(temp & 0x02) SiS_Pr->SiS_LCDInfo |= LCDDualLink;
+	   if((temp & 0x02) && SiS_CheckLVDS(SiS_Pr)) SiS_Pr->SiS_LCDInfo |= LCDDualLink;/* karma@080401 check LVDS to enable DualLink */
 	}
      } else if(!(SiS_Pr->SiS_ROMNew)) {
 	if(SiS_Pr->SiS_VBType & VB_SISDUALLINK) {
 	   if((SiS_Pr->SiS_CustomT == CUT_CLEVO1024) &&
-	      (SiS_Pr->SiS_LCDResInfo == Panel_1024x768)) {
+	      (SiS_Pr->SiS_LCDResInfo == Panel_1024x768) && 
+	       SiS_CheckLVDS(SiS_Pr)) {/* karma@080401 check LVDS to enable DualLink */
 	      SiS_Pr->SiS_LCDInfo |= LCDDualLink;
 	   }
-	   if((SiS_Pr->SiS_LCDResInfo == Panel_1280x1024) ||
+	   if(((SiS_Pr->SiS_LCDResInfo == Panel_1280x1024) ||
 	      (SiS_Pr->SiS_LCDResInfo == Panel_1400x1050) ||
 	      (SiS_Pr->SiS_LCDResInfo == Panel_1600x1200) ||
-	      (SiS_Pr->SiS_LCDResInfo == Panel_1680x1050)) {
+	      (SiS_Pr->SiS_LCDResInfo == Panel_1680x1050)) && 
+	      SiS_CheckLVDS(SiS_Pr)) {/* karma@080401 check LVDS to enable DualLink */
 	      SiS_Pr->SiS_LCDInfo |= LCDDualLink;
 	   }
 	}
@@ -1872,6 +1964,20 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 			    SiS_Pr->PanelVCLKIdx315 = VCLK108_2_315;
 			    SiS_GetLCDInfoBIOS(SiS_Pr);
 			    break;
+     case Panel_1440x900:   SiS_Pr->PanelXRes = 1440; SiS_Pr->PanelYRes =  900;
+			    SiS_Pr->PanelHT   = 1760; SiS_Pr->PanelVT   =  912;
+			    SiS_Pr->PanelHRS  =   64; SiS_Pr->PanelHRE  =   32;
+			    SiS_Pr->PanelVRS  =    3; SiS_Pr->PanelVRE  =    3;
+			    SiS_Pr->PanelVCLKIdx315 = VCLKLCD1440_900;
+			    SiS_GetLCDInfoBIOS(SiS_Pr);
+			    break;
+     case Panel_1366x768:   SiS_Pr->PanelXRes = 1366; SiS_Pr->PanelYRes =  768;/*1366X768. Ivans@0910109*/
+			    SiS_Pr->PanelHT   = 1528; SiS_Pr->PanelVT   =  790;
+			    SiS_Pr->PanelHRS  =   48; SiS_Pr->PanelHRE  =   32;
+			    SiS_Pr->PanelVRS  =    2; SiS_Pr->PanelVRE  =    5;     
+			    SiS_Pr->PanelVCLKIdx315 = VCLKLCD1366_768;
+			    SiS_GetLCDInfoBIOS(SiS_Pr);
+			    break;
      case Panel_1600x1200:  SiS_Pr->PanelXRes = 1600; SiS_Pr->PanelYRes = 1200;
 			    SiS_Pr->PanelHT   = 2160; SiS_Pr->PanelVT   = 1250;
 			    SiS_Pr->PanelHRS  =   64; SiS_Pr->PanelHRE  =  192;
@@ -1889,7 +1995,7 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 			       SiS_Pr->PanelHT  = 2048; SiS_Pr->PanelVT  = 1320;
 			       SiS_Pr->PanelHRS = SiS_Pr->PanelHRE = 999;
 			       SiS_Pr->PanelVRS = SiS_Pr->PanelVRE = 999;
-			    }
+			    }    
 			    SiS_GetLCDInfoBIOS(SiS_Pr);
 			    break;
      case Panel_1680x1050:  SiS_Pr->PanelXRes = 1680; SiS_Pr->PanelYRes = 1050;
@@ -1930,7 +2036,7 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 				  SiS_Pr->PanelVCLKIdx315 = VCLK_CUSTOM_315;
 				  SiS_Pr->PanelVCLKIdx300 = VCLK_CUSTOM_300;
 				  if(SiS_Pr->ChipType < SIS_315H) idx = VCLK_CUSTOM_300;
-				  else				   idx = VCLK_CUSTOM_315;
+				  else				  idx = VCLK_CUSTOM_315;
 				  SiS_Pr->SiS_VCLKData[idx].CLOCK =
 				     SiS_Pr->SiS_VBVCLKData[idx].CLOCK = SiS_Pr->CP_PrefClock;
 				  SiS_Pr->SiS_VCLKData[idx].SR2B =
@@ -2098,9 +2204,17 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 				  SiS_Pr->SiS_LCDInfo |= DontExpandLCD;
 			       }
 			       break;
-	case SIS_RI_1280x1024: SiS_Pr->SiS_LCDInfo |= DontExpandLCD;
-			       break;
 	}
+	break;
+     }
+     case Panel_1440x900: {
+	static const unsigned char nonscalingmodes[] = {
+	   SIS_RI_720x480, SIS_RI_720x576, SIS_RI_768x576, SIS_RI_800x480, SIS_RI_848x480,
+	   SIS_RI_856x480, SIS_RI_960x540, SIS_RI_960x600, SIS_RI_1024x576,SIS_RI_1024x600,
+	   SIS_RI_1152x768,SIS_RI_1152x864,SIS_RI_1280x720,SIS_RI_1280x768,SIS_RI_1280x800,
+	   SIS_RI_1280x854,SIS_RI_1360x768,0xff
+	};
+	SiS_CheckScaling(SiS_Pr, resinfo, nonscalingmodes);
 	break;
      }
      case Panel_1600x1200: {
@@ -2108,12 +2222,23 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 	     SIS_RI_720x480, SIS_RI_720x576, SIS_RI_768x576, SIS_RI_800x480, SIS_RI_848x480,
 	     SIS_RI_856x480, SIS_RI_960x540, SIS_RI_960x600, SIS_RI_1024x576,SIS_RI_1024x600,
 	     SIS_RI_1152x768,SIS_RI_1152x864,SIS_RI_1280x720,SIS_RI_1280x768,SIS_RI_1280x800,
-	     SIS_RI_1280x854,SIS_RI_1280x960,SIS_RI_1360x768,SIS_RI_1360x1024,0xff
+	     SIS_RI_1280x854,SIS_RI_1280x960,SIS_RI_1360x768,SIS_RI_1360x1024,SIS_RI_1440x900,
+	     0xff
 	};
 	SiS_CheckScaling(SiS_Pr, resinfo, nonscalingmodes);
 	break;
      }
      case Panel_1680x1050: {
+	static const unsigned char nonscalingmodes[] = {
+	     SIS_RI_720x480, SIS_RI_720x576, SIS_RI_768x576, SIS_RI_800x480, SIS_RI_848x480,
+	     SIS_RI_856x480, SIS_RI_960x540, SIS_RI_960x600, SIS_RI_1024x576,SIS_RI_1024x600,
+	     SIS_RI_1152x768,SIS_RI_1152x864,SIS_RI_1280x854,SIS_RI_1280x960,SIS_RI_1360x768,
+	     SIS_RI_1360x1024,SIS_RI_1440x900,0xff
+	};
+	SiS_CheckScaling(SiS_Pr, resinfo, nonscalingmodes);
+	break;
+     }
+     case Panel_1920x1200: {
 	static const unsigned char nonscalingmodes[] = {
 	     SIS_RI_720x480, SIS_RI_720x576, SIS_RI_768x576, SIS_RI_800x480, SIS_RI_848x480,
 	     SIS_RI_856x480, SIS_RI_960x540, SIS_RI_960x600, SIS_RI_1024x576,SIS_RI_1024x600,
@@ -2235,6 +2360,9 @@ SiS_GetLCDResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
   } else {
      SiS_Pr->SiS_SetFlag |= LCDVESATiming;
   }
+#ifdef TWDEBUG
+  xf86DrvMsg(0,X_INFO,"[SiS_GetLCDResInfo]:LCDInfo=0x%x from CR37.\n",SiS_Pr->SiS_LCDInfo);
+#endif
 
 #ifdef SIS_LINUX_KERNEL
 #if 0
@@ -2494,7 +2622,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 
      SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x00,0xAF,0x40);
      SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x2E,0xF7);
-
+ /*   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2E,0x87);*/
   } else {
 
      for(i=0,j=4; i<3; i++,j++) SiS_SetReg(SiS_Pr->SiS_Part1Port,j,0);
@@ -2559,7 +2687,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 	if(SiS_Pr->SiS_IF_DEF_LVDS == 1) {
 	   SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x00,0xa0,tempah);
 	} else if(SiS_Pr->SiS_VBType & VB_SISVB) {
-	   if(IS_SIS740) {
+	   if(SiS_Pr->ChipType == SIS_740) {
 	      SiS_SetReg(SiS_Pr->SiS_Part1Port,0x00,tempah);
 	   } else {
 	      SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x00,0xa0,tempah);
@@ -2618,6 +2746,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 	SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x0D,0x40,tempah);
 
 	tempah = 0x80;
+
 	if(SiS_Pr->SiS_VBType & VB_SIS301) {
 	   if(SiS_Pr->PanelXRes < 1280 && SiS_Pr->PanelYRes < 960) tempah = 0;
 	}
@@ -2692,7 +2821,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 
 	/* 740 variants match for 30xB, 301B-DH, 30xLV */
 
-	if(!(IS_SIS740)) {
+	if(SiS_Pr->ChipType != SIS_740) {
 	   tempah = 0x04;						   /* For all bridges */
 	   tempbl = 0xfb;
 	   if(!(SiS_Pr->SiS_VBInfo & SetCRT2ToLCDA)) {
@@ -2713,7 +2842,9 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 	 * chipset than the bridge revision.
 	 */
 
-	if((IS_SIS740) || (SiS_Pr->ChipType >= SIS_661) || (SiS_Pr->SiS_ROMNew)) {
+	if((SiS_Pr->ChipType == SIS_740) ||
+	   (SiS_Pr->ChipType >= SIS_661) ||
+	   (SiS_Pr->SiS_ROMNew)) {
 	   tempah = 0x30;
 	   tempbl = 0xc0;
 	   if((SiS_Pr->SiS_VBInfo & DisableCRT2Display) ||
@@ -2737,7 +2868,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 	         tempah = tempah2 = 0x00;
 	   } else if(SiS_Pr->SiS_TVBlue == -1) {
 	      /* Set on 651/M650, clear on 315/650 */
-	      if(!(IS_SIS65x)) /* (bridgerev != 0xb0) */ {
+	      if(!(SiS_Pr->SiS_SysFlags & SF_Is65x)) /* (bridgerev != 0xb0) */ {
 	         tempah = tempah2 = 0x00;
 	      }
 	   }
@@ -2756,7 +2887,7 @@ SiS_SetCRT2ModeRegs(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
 	   SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x21,tempbl2,tempah2);
 	}
 
-	if(IS_SIS740) {
+	if(SiS_Pr->ChipType == SIS_740) {
 	   tempah = 0x80;
 	   if(SiS_Pr->SiS_VBInfo & DisableCRT2Display) tempah = 0x00;
 	   SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x23,0x7f,tempah);
@@ -2936,6 +3067,10 @@ SiS_GetCRT2ResInfo(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
    }
    SiS_Pr->SiS_VGAHDE = SiS_Pr->SiS_HDE = xres;
    SiS_Pr->SiS_VGAVDE = SiS_Pr->SiS_VDE = yres;
+
+// PCF   
+//   xf86DrvMsg(0, X_INFO, "SiS_GetCRT2ResInfo HDE= %d, VDE = %d",xres,yres);
+   
 }
 
 /*********************************************/
@@ -2974,13 +3109,20 @@ SiS_GetCRT2Ptr(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short
 	}
 
 	if(SiS_Pr->SiS_LCDInfo & DontExpandLCD) {
+	   if(SiS_Pr->SiS_LCDResInfo == Panel_1366x768){/*1366x768. Ivans@090109*/
+	      if (resinfo == SIS_RI_1366x768)  tempal = 2; /*1366x768 (1:1) */
+	      if (resinfo == SIS_RI_1024x768)  tempal = 1; /*1024 on 1366 Panel*/
+	      if (resinfo == SIS_RI_800x600 )  tempal = 0; /* 800 on 1366 Panel*/
+	   }	
 	   /* Pass 1:1 only (center-screen handled outside) */
 	   /* This is never called for the panel's native resolution */
 	   /* since Pass1:1 will not be set in this case */
-	   tempbx = 100;
-	   if(ModeNo >= 0x13) {
-	      tempal = SiS_Pr->SiS_RefIndex[RefreshRateTableIndex].Ext_CRT2CRTC_NS;
-	   }
+	   else{
+            tempbx = 100;
+	    if(ModeNo >= 0x13) {
+	    tempal = SiS_Pr->SiS_RefIndex[RefreshRateTableIndex].Ext_CRT2CRTC_NS;
+	    } 
+	  }
 	}
 
 #ifdef SIS315H
@@ -3040,11 +3182,22 @@ SiS_GetCRT2Ptr(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short
 	      tempal = 4;
 	      if(SiS_Pr->SiS_TVMode & TVSetYPbPr750p) tempal = 9;
 	      break;
+	   case SIS_RI_848x480:
+	   case SIS_RI_856x480:
+	      tempal = 10;
+	      if(SiS_Pr->SiS_TVMode & TVSetYPbPr750p) tempal = 9;
+	      break;
 	   case SIS_RI_512x384:
 	   case SIS_RI_1024x768:
 	      tempal = 7;
 	      if(SiS_Pr->SiS_TVMode & (TVSetYPbPr525p | TVSetYPbPr625p)) {
 	         tempal = 8;
+	      }
+		/*(karma)spec. for TV composite mode 1024x768*/
+		/*(karma) pathing for PAL */
+	      if((SiS_Pr->SiS_VBInfo & SetCRT2ToAVIDEO) && (SiS_Pr->ChipType > SIS_761)){
+	         if((SiS_Pr->SiS_TVMode & TVSetNTSC1024) || (SiS_Pr->SiS_TVMode & TVSetPALM))
+		 	 tempal = 11;
 	      }
 	      break;
 	   case SIS_RI_1280x720:
@@ -3204,10 +3357,18 @@ SiS_CalcPanelLinkTiming(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
 	    SiS_Pr->SiS_VGAVT = SiS_Pr->SiS_NoScaleData[ResIndex].VGAVT;
 	    SiS_Pr->SiS_HT    = SiS_Pr->SiS_NoScaleData[ResIndex].LCDHT;
 	    SiS_Pr->SiS_VT    = SiS_Pr->SiS_NoScaleData[ResIndex].LCDVT;
+// PCF	    
+#ifdef TWDEBUG		
+            xf86DrvMsg(0, X_INFO, "SiS_CalcPanelLinkTiming #1\n");
+#endif
 	 }
       } else {
 	 SiS_Pr->SiS_VGAHT = SiS_Pr->SiS_HT = SiS_Pr->PanelHT;
 	 SiS_Pr->SiS_VGAVT = SiS_Pr->SiS_VT = SiS_Pr->PanelVT;
+// PCF	    
+#ifdef TWDEBUG		
+         xf86DrvMsg(0, X_INFO, "SiS_CalcPanelLinkTiming #2\n");
+#endif
       }
    } else {
       /* This handles custom modes and custom panels */
@@ -3218,6 +3379,11 @@ SiS_CalcPanelLinkTiming(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
       SiS_Pr->SiS_VGAHT = SiS_Pr->PanelHT - (SiS_Pr->PanelXRes - SiS_Pr->SiS_VGAHDE);
       SiS_Pr->SiS_VGAVT = SiS_Pr->PanelVT - (SiS_Pr->PanelYRes - SiS_Pr->SiS_VGAVDE);
    }
+   
+// PCF
+#ifdef TWDEBUG		
+   xf86DrvMsg(0, X_INFO, "SiS_CalcPanelLinkTiming VGAHT= %d, HT = %d\n",SiS_Pr->SiS_VGAHT,SiS_Pr->SiS_HT);
+#endif
 }
 
 static void
@@ -3344,10 +3510,19 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	 (resinfo661 >= 0)                     &&
 	 (SiS_Pr->SiS_NeedRomModeData) ) {
 	if((ROMAddr = GetLCDStructPtr661(SiS_Pr))) {
-	   if((romptr = (SISGETROMW(21)))) {
-	      romptr += (resinfo661 * 10);
-	      ROMAddr = SiS_Pr->VirtualRomBase;
-	   }
+	    if(SiS_Pr->ChipType < SIS_761)	
+	    {    if((romptr = (SISGETROMW(21)))) {
+	              romptr += (resinfo661 * 10);
+	              ROMAddr = SiS_Pr->VirtualRomBase;
+	          }
+	    }
+	    else
+	    {
+	          if((romptr = (SISGETROMW(22)))) {
+	              romptr += (resinfo661 * 7);
+	              ROMAddr = SiS_Pr->VirtualRomBase;
+	          }
+	    }
 	}
      }
 #endif
@@ -3484,7 +3659,11 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 
 	if(!(SiS_Pr->SiS_TVMode & TVSetPAL)) {
 	   SiS_Pr->SiS_HT = NTSCHT;
-	   if(SiS_Pr->SiS_TVMode & TVSetNTSC1024) SiS_Pr->SiS_HT = NTSC2HT;
+	   if(SiS_Pr->SiS_TVMode & TVSetNTSC1024){
+/*(karma) spec. for TV composite mode 1024x768*/
+	      if(SiS_Pr->SiS_VBInfo & SetCRT2ToAVIDEO)SiS_Pr->SiS_HT = NTSC3HT;
+	      else SiS_Pr->SiS_HT = NTSC2HT;
+	   }
 	   SiS_Pr->SiS_VT = NTSCVT;
 	} else {
 	   SiS_Pr->SiS_HT = PALHT;
@@ -3517,9 +3696,12 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	   SiS_Pr->SiS_VGAHT = SiS_Pr->PanelHT;
 	   SiS_Pr->SiS_VGAVT = SiS_Pr->PanelVT;
 	   SiS_Pr->SiS_HT    = SiS_Pr->PanelHT;
-	   SiS_Pr->SiS_VT    = SiS_Pr->PanelVT;
+	   SiS_Pr->SiS_VT    = SiS_Pr->PanelVT;	   
 	   gotit = TRUE;
-
+// PCF
+#ifdef TWDEBUG		
+	   xf86DrvMsg(0, X_INFO, "GetCRT2Data301 #1\n");
+#endif
 	} else if( (!(SiS_Pr->SiS_LCDInfo & DontExpandLCD)) && (romptr) && (ROMAddr) ) {
 
 #ifdef SIS315H
@@ -3527,15 +3709,31 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	   SiS_Pr->SiS_RVBHCFACT = ROMAddr[romptr+1];
 	   SiS_Pr->SiS_VGAHT     = ROMAddr[romptr+2] | ((ROMAddr[romptr+3] & 0x0f) << 8);
 	   SiS_Pr->SiS_VGAVT     = (ROMAddr[romptr+4] << 4) | ((ROMAddr[romptr+3] & 0xf0) >> 4);
-	   SiS_Pr->SiS_HT        = ROMAddr[romptr+5] | ((ROMAddr[romptr+6] & 0x0f) << 8);
-	   SiS_Pr->SiS_VT        = (ROMAddr[romptr+7] << 4) | ((ROMAddr[romptr+6] & 0xf0) >> 4);
-	   SiS_Pr->SiS_RVBHRS2   = ROMAddr[romptr+8] | ((ROMAddr[romptr+9] & 0x0f) << 8);
-	   if((SiS_Pr->SiS_RVBHRS2) && (modeflag & HalfDCLK)) {
-	      SiS_Pr->SiS_RVBHRS2 = ((SiS_Pr->SiS_RVBHRS2 + 3) >> 1) - 3;
-	      tempax = (ROMAddr[romptr+9] >> 4) & 0x07;
-	      if(ROMAddr[romptr+9] & 0x80) SiS_Pr->SiS_RVBHRS2 -= tempax;
-	      else                         SiS_Pr->SiS_RVBHRS2 += tempax;
-	   }
+	   if(SiS_Pr->ChipType<SIS_761)
+           {
+	       SiS_Pr->SiS_HT        = ROMAddr[romptr+5] | ((ROMAddr[romptr+6] & 0x0f) << 8);
+	       SiS_Pr->SiS_VT        = (ROMAddr[romptr+7] << 4) | ((ROMAddr[romptr+6] & 0xf0) >> 4);
+               SiS_Pr->SiS_RVBHRS2   = ROMAddr[romptr+8] | ((ROMAddr[romptr+9] & 0x0f) << 8);
+	       if((SiS_Pr->SiS_RVBHRS2) && (modeflag & HalfDCLK)) {
+	           SiS_Pr->SiS_RVBHRS2 = ((SiS_Pr->SiS_RVBHRS2 + 3) >> 1) - 3;
+	           tempax = (ROMAddr[romptr+9] >> 4) & 0x07;
+	       if(ROMAddr[romptr+9] & 0x80) SiS_Pr->SiS_RVBHRS2 -= tempax;
+	       else                         SiS_Pr->SiS_RVBHRS2 += tempax;
+	       }		   
+           }
+	   else
+           {    
+               SiS_Pr->SiS_HT        = SiS_Pr->PanelHT;
+               SiS_Pr->SiS_VT        = SiS_Pr->PanelVT;
+               SiS_Pr->SiS_RVBHRS2   = ROMAddr[romptr+5] | ((ROMAddr[romptr+6] & 0x0f) << 8);
+	       if((SiS_Pr->SiS_RVBHRS2) && (modeflag & HalfDCLK)) {
+	           SiS_Pr->SiS_RVBHRS2 = ((SiS_Pr->SiS_RVBHRS2 + 3) >> 1) - 3;
+	           tempax = (ROMAddr[romptr+6] >> 4) & 0x07;
+	       if(ROMAddr[romptr+6] & 0x80) SiS_Pr->SiS_RVBHRS2 -= tempax;
+	       else                         SiS_Pr->SiS_RVBHRS2 += tempax;
+	       }
+           }
+	   /*step2 (if above steps still not work, you change below infor to force not scaling)*/
 	   if(SiS_Pr->SiS_VGAHT) gotit = TRUE;
 	   else {
 	      SiS_Pr->SiS_LCDInfo |= DontExpandLCD;
@@ -3569,6 +3767,12 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	      case Panel_1280x800  + 32: LCDPtr = SiS_Pr->SiS_LCD1280x800Data;      break;
 	      case Panel_1280x800_2    :
 	      case Panel_1280x800_2+ 32: LCDPtr = SiS_Pr->SiS_LCD1280x800_2Data;    break;
+              /*1366x768. Ivans@090109*/
+	      case Panel_1366x768      :
+              case Panel_1366x768  + 32: LCDPtr = SiS_Pr->SiS_LCD1366x768Data;      break;					
+	      /*Ivans add 1440x900.*/	 			 
+	      case Panel_1440x900      :
+	      case Panel_1440x900  + 32: LCDPtr = SiS_Pr->SiS_LCD1440x900Data;      break;				 
 	      case Panel_1280x854      :
 	      case Panel_1280x854  + 32: LCDPtr = SiS_Pr->SiS_LCD1280x854Data;      break;
 	      case Panel_1280x960      :
@@ -3581,7 +3785,9 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	      case Panel_1600x1200 + 32: LCDPtr = SiS_Pr->SiS_StLCD1600x1200Data;   break;
 	      case Panel_1680x1050     :
 	      case Panel_1680x1050 + 32: LCDPtr = SiS_Pr->SiS_LCD1680x1050Data;     break;
-	      case 100		       : LCDPtr = SiS_Pr->SiS_NoScaleData;	    break;
+	      case 100		       : LCDPtr = SiS_Pr->SiS_NoScaleData;
+	                	 	 xf86DrvMsg(0, X_INFO, "Scaling LCD\n");
+	    				 break;
 #ifdef SIS315H
 	      case 200                 : LCDPtr = SiS310_ExtCompaq1280x1024Data;    break;
 	      case 201                 : LCDPtr = SiS_Pr->SiS_St2LCD1280x1024Data;  break;
@@ -3589,11 +3795,11 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	      default                  : LCDPtr = SiS_Pr->SiS_ExtLCD1024x768Data;   break;
 	   }
 
-#ifdef SIS_XORG_XF86
+//#ifdef SIS_XORG_XF86
 #ifdef TWDEBUG
-	   xf86DrvMsg(0, X_INFO, "GetCRT2Data: Index %d ResIndex %d\n", CRT2Index, ResIndex);
+	   xf86DrvMsg(0, X_INFO, "GetCRT2Data: Index %d ResIndex %x\n", CRT2Index, ResIndex);
 #endif
-#endif
+//#endif
 
 	   SiS_Pr->SiS_RVBHCMAX  = (LCDPtr+ResIndex)->RVBHCMAX;
 	   SiS_Pr->SiS_RVBHCFACT = (LCDPtr+ResIndex)->RVBHCFACT;
@@ -3601,7 +3807,10 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	   SiS_Pr->SiS_VGAVT     = (LCDPtr+ResIndex)->VGAVT;
 	   SiS_Pr->SiS_HT        = (LCDPtr+ResIndex)->LCDHT;
 	   SiS_Pr->SiS_VT        = (LCDPtr+ResIndex)->LCDVT;
-
+// PCF
+#ifdef TWDEBUG		
+   xf86DrvMsg(0, X_INFO, "GetCRT2Data VGAHT= %d, HT = %d",SiS_Pr->SiS_VGAHT,SiS_Pr->SiS_HT);
+#endif
         }
 
 	tempax = SiS_Pr->PanelXRes;
@@ -3650,6 +3859,11 @@ SiS_GetCRT2Data301(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 	SiS_Pr->SiS_VDE = tempbx;
      }
   }
+ 
+// PCF
+#ifdef TWDEBUG		
+   xf86DrvMsg(0, X_INFO, "SiS_GetCRT2Data301 VGAHT= %d, HT = %d\n",SiS_Pr->SiS_VGAHT,SiS_Pr->SiS_HT);
+#endif
 }
 
 static void
@@ -4055,7 +4269,7 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 		 SiS_DDC2Delay(SiS_Pr,0xe000);
 		 SiS_SetRegByte(SiS_Pr->SiS_P3c6,0x00);
 		 pushax = SiS_GetReg(SiS_Pr->SiS_P3c4,0x06);
-		 if(IS_SIS740) {
+		 if(SiS_Pr->ChipType == SIS_740) {
 		    SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x06,0xE3);
 		 }
 	         SiS_PanelDelay(SiS_Pr, 3);
@@ -4110,7 +4324,10 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 	      SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x32,0xDF);
 	      temp = SiS_GetReg(SiS_Pr->SiS_Part1Port,0x00);
 	      SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x00,0x10);
-	      SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x1E,0xDF);
+		/* chaoyu: We should not diable CRT2 here, since there 
+		    are some errors probably happening if we disable and 
+		    then enable(in SiS_EnableBridge) the bridge. */
+		/*SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x1E,0xDF);*/
 	      SiS_SetReg(SiS_Pr->SiS_Part1Port,0x00,temp);
 
 	   }
@@ -4144,7 +4361,44 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 	   }
 
 #endif /* SIS315H */
+        if((SiS_Pr->SiS_VBType==VB2_307LV)||(SiS_Pr->SiS_VBType==VB2_307T))   /*chaoyu:(TODO) bug*/
+        {
+                if(SiS_Pr->SiS_VBInfo==SetCRT2ToLCD)
+                {  /*channel B disable*/
+                    /*disable channel B   part4, 0x1F[6]=1*/
+                    SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x1F,0x40); 
+                }
+                else if(SiS_Pr->SiS_VBInfo==SetCRT2ToLCDA){
+                    /*disable channel A  part4_30 [1]=0*/
+                    SiS_SetRegAND(SiS_Pr->SiS_Part4Port,0x30,0xFD); 
+                }
+		/*disable VB globle fun part2,0x00[5]=0*/
+                SiS_SetRegAND(SiS_Pr->SiS_Part2Port,0x00,~0x20); 
 
+		/*reset IGU output FIFO  part1,0x4C[4:3]=00*/
+                SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x4C,~0x18); 
+
+                if(SiS_Pr->SiS_VBInfo==SetCRT2ToLCD)
+                {  
+		    /*disable crt2 engine   SR1E[5]=0*/
+		    SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x1E,~0x10); 
+                }
+                else if(SiS_Pr->SiS_VBInfo==SetCRT2ToLCDA){
+                    /*disable CRT1  CR17[7]=0*/
+                    SiS_SetRegAND(SiS_Pr->SiS_P3d4,0x17,~0x80); 
+                }
+
+		/*reset IGU Pcie Plls    part1, 0x38[6]=0*/
+		SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x38,~0x40);
+
+		/*reset VB PCIE pll part4,0x4C[5]=0*/
+		SiS_SetRegAND(SiS_Pr->SiS_Part4Port,0x4C,~0x20);
+
+		/*reset IGU Pcie Pll   part1,0x38[5]=0*/
+		SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x38,~0x20);
+	    
+        }
+	
 	}
 
      } else {     /* ============ For 301 ================ */
@@ -4239,6 +4493,8 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 
 #ifdef SIS315H	/* 315 series */
 
+	SiS_UnLockCRT2(SiS_Pr);
+
 	if(!(SiS_IsNotM650orLater(SiS_Pr))) {
 	   /*if(SiS_Pr->ChipType < SIS_340) { */ /* XGI needs this */
 	      SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x4c,~0x18);
@@ -4276,8 +4532,10 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 	}
 
 	if(SiS_Pr->SiS_IF_DEF_CH70xx == 0) {
-	   SiS_SetRegSR11ANDOR(SiS_Pr,0xF7,0x08);
-	   SiS_PanelDelay(SiS_Pr, 3);
+	   if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+	      SiS_SetRegSR11ANDOR(SiS_Pr,0xF7,0x08);
+	      SiS_PanelDelay(SiS_Pr, 3);
+	   }
 	}
 
 	if( (SiS_Pr->SiS_IF_DEF_CH70xx == 0)   ||
@@ -4308,8 +4566,10 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 	   if(SiS_CRT2IsLCD(SiS_Pr)) {
 	      SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x1e,0xdf);
 	      if(SiS_Pr->ChipType == SIS_550) {
-		 SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x1e,0xbf);
-		 SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x1e,0xef);
+		 if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+		    SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x1e,0xbf);
+		    SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x1e,0xef);
+		 }
 	      }
 	   }
 	} else {
@@ -4330,22 +4590,22 @@ SiS_DisableBridge(struct SiS_Private *SiS_Pr)
 	   }
 	}
 
-	SiS_UnLockCRT2(SiS_Pr);
-
 	if(SiS_Pr->ChipType == SIS_550) {
 	   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x01,0x80); /* DirectDVD PAL?*/
 	   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x02,0x40); /* VB clock / 4 ? */
-	} else if( (SiS_Pr->SiS_IF_DEF_CH70xx == 0)   ||
+	} else if( (SiS_Pr->SiS_IF_DEF_CH70xx == 0) ||
 		   (!(SiS_IsDualEdge(SiS_Pr))) ||
 		   (!(SiS_IsVAMode(SiS_Pr))) ) {
 	   SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x2e,0xf7);
 	}
 
         if(SiS_Pr->SiS_IF_DEF_CH70xx == 0) {
-	   if(SiS_CRT2IsLCD(SiS_Pr)) {
-	      if(!(SiS_WeHaveBacklightCtrl(SiS_Pr))) {
-		 SiS_PanelDelay(SiS_Pr, 2);
-		 SiS_SetRegSR11ANDOR(SiS_Pr,0xFB,0x04);
+           if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+	      if(SiS_CRT2IsLCD(SiS_Pr)) {
+		 if(!(SiS_WeHaveBacklightCtrl(SiS_Pr))) {
+		    SiS_PanelDelay(SiS_Pr, 2);
+		    SiS_SetRegSR11ANDOR(SiS_Pr,0xFB,0x04);
+		 }
 	      }
 	   }
         }
@@ -4469,22 +4729,25 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 	 }
 
 	 if(!(SiS_IsNotM650orLater(SiS_Pr))) {
-	    /*if(SiS_Pr->ChipType < SIS_340) { */
 	       tempah = 0x10;
 	       if(SiS_LCDAEnabled(SiS_Pr)) {
 		  if(SiS_TVEnabled(SiS_Pr)) tempah = 0x18;
 		  else			    tempah = 0x08;
 	       }
 	       SiS_SetReg(SiS_Pr->SiS_Part1Port,0x4c,tempah);
-	    /*}*/
 	 }
 
+         if(SiS_Pr->ChipType >= SIS_761){
+             SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x39,0x02);	 
+   	         SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x51,0x02);
+         }
+         
 	 if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
 
 	    SiS_SetRegByte(SiS_Pr->SiS_P3c6,0x00);
 	    SiS_DisplayOff(SiS_Pr);
 	    pushax = SiS_GetReg(SiS_Pr->SiS_P3c4,0x06);
-	    if(IS_SIS740) {
+	    if(SiS_Pr->ChipType == SIS_740) {
 	       SiS_SetRegAND(SiS_Pr->SiS_P3c4,0x06,0xE3);
 	    }
 
@@ -4515,8 +4778,8 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 
 	 }
 
-	 if(!(SiS_IsVAMode(SiS_Pr))) {
 
+	 if(!(SiS_IsVAMode(SiS_Pr))) {
 	    temp = SiS_GetReg(SiS_Pr->SiS_P3c4,0x32) & 0xDF;
 	    if(SiS_BridgeInSlavemode(SiS_Pr)) {
 	       tempah = SiS_GetReg(SiS_Pr->SiS_P3d4,0x30);
@@ -4525,9 +4788,10 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 	       }
 	    }
 	    SiS_SetReg(SiS_Pr->SiS_P3c4,0x32,temp);
-
+        SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x27,0x40);
+        SiS_GenericDelay(SiS_Pr, 17664);
 	    SiS_SetRegOR(SiS_Pr->SiS_P3c4,0x1E,0x20);                   /* enable CRT2 */
-
+        SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x27,~0x40);
 	    SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x2e,0x7f);
 	    SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x2e,0x80);
 
@@ -4585,6 +4849,7 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 		     unsigned char  *ROMAddr = SiS_Pr->VirtualRomBase;
 		     unsigned short romptr = GetLCDStructPtr661_2(SiS_Pr);
 		     if(romptr) {
+		        SiS_WaitVBRetrace(SiS_Pr);
 			SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x30,0x20); /* Reset */
 			SiS_Pr->EMI_30 = 0;
 			SiS_Pr->EMI_31 = ROMAddr[romptr + SiS_Pr->SiS_EMIOffset + 0];
@@ -4688,6 +4953,7 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 		  }
 
 		  if(!(SiS_Pr->OverruleEMI && (!r30) && (!r31) && (!r32) && (!r33))) {
+		     SiS_WaitVBRetrace(SiS_Pr);
 		     SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x30,0x20); /* Reset */
 		     SiS_GenericDelay(SiS_Pr, 2048);
 		  }
@@ -4703,11 +4969,15 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 		      (SiS_CRT2IsLCD(SiS_Pr)) ) {
 		     if(r30 & 0x40) {
 			/*SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x2a,0x80);*/
-			SiS_PanelDelayLoop(SiS_Pr, 3, 5);
+			SiS_PanelDelayLoop(SiS_Pr, 3, 10);
 			if(delaylong) {
 			   SiS_PanelDelayLoop(SiS_Pr, 3, 5);
 			   delaylong = FALSE;
 			}
+			SiS_WaitVBRetrace(SiS_Pr);
+			SiS_WaitVBRetrace(SiS_Pr);
+			SiS_WaitVBRetrace(SiS_Pr);
+			SiS_WaitVBRetrace(SiS_Pr);
 			SiS_WaitVBRetrace(SiS_Pr);
 			SiS_WaitVBRetrace(SiS_Pr);
 			if(SiS_Pr->SiS_CustomT == CUT_ASUSA2H_2) {
@@ -4732,10 +5002,11 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 		     SiS_GenericDelay(SiS_Pr, 2048);
 		     SiS_WaitVBRetrace(SiS_Pr);
 		  }
-		  if(!didpwd) {
+		  if(SiS_Pr->SiS_EnableBackLight) {
 		     SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x26,0x01);
-		  } else {
-		     SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x26,0x03);
+		  }
+		  if(didpwd) {
+		     SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x26,0x02);
 		  }
 	       }
 	    }
@@ -4747,6 +5018,7 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 	 }
 
 	 if(!(SiS_WeHaveBacklightCtrl(SiS_Pr))) {
+	    SiS_WaitVBRetrace(SiS_Pr);
 	    SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x00,0x7f);
 	 }
 
@@ -4851,6 +5123,8 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 
 #ifdef SIS315H    /* 315 series */
 
+       SiS_UnLockCRT2(SiS_Pr);
+
        if(!(SiS_IsNotM650orLater(SiS_Pr))) {
 	  /*if(SiS_Pr->ChipType < SIS_340) {*/  /* XGI needs this */
 	     SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x4c,0x18);
@@ -4858,14 +5132,15 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
        }
 
        if(SiS_Pr->SiS_IF_DEF_CH70xx == 0) {
-	  if(SiS_CRT2IsLCD(SiS_Pr)) {
-	     SiS_SetRegSR11ANDOR(SiS_Pr,0xFB,0x00);
-	     SiS_PanelDelay(SiS_Pr, 0);
+          if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+	     if(SiS_CRT2IsLCD(SiS_Pr)) {
+	        SiS_SetRegSR11ANDOR(SiS_Pr,0xFB,0x00);
+	        SiS_PanelDelay(SiS_Pr, 0);
+	     }
 	  }
        }
 
        SiS_SetRegOR(SiS_Pr->SiS_P3c4,0x1E,0x20);
-       SiS_UnLockCRT2(SiS_Pr);
 
        SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x2e,0xf7);
 
@@ -4902,8 +5177,10 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 	  if(SiS_CRT2IsLCD(SiS_Pr)) {
 	     SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1E,0x20);
 	     if(SiS_Pr->ChipType == SIS_550) {
-		SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1E,0x40);
-		SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1E,0x10);
+		if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+		   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1E,0x40);
+		   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1E,0x10);
+		}
 	     }
 	  }
        } else if(SiS_IsVAMode(SiS_Pr)) {
@@ -4935,10 +5212,12 @@ SiS_EnableBridge(struct SiS_Private *SiS_Pr)
 	     }
 	  }
        } else if(SiS_Pr->SiS_IF_DEF_CH70xx == 0) {
-	  if(!(SiS_WeHaveBacklightCtrl(SiS_Pr))) {
-	     if(SiS_CRT2IsLCD(SiS_Pr)) {
-		SiS_PanelDelay(SiS_Pr, 1);
-		SiS_SetRegSR11ANDOR(SiS_Pr,0xF7,0x00);
+          if((SiS_Pr->SiS_CustomT != CUT_ICOP550) && (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
+	     if(!(SiS_WeHaveBacklightCtrl(SiS_Pr))) {
+		if(SiS_CRT2IsLCD(SiS_Pr)) {
+		   SiS_PanelDelay(SiS_Pr, 1);
+		   SiS_SetRegSR11ANDOR(SiS_Pr,0xF7,0x00);
+		}
 	     }
 	  }
        }
@@ -5001,7 +5280,9 @@ SiS_SetCRT2Sync(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned shor
       if(!(SiS_Pr->SiS_LCDInfo & LCDRGB18Bit)) tempah |= 0x10;
       if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
 	 if((SiS_Pr->SiS_CustomT == CUT_BARCO1366) ||
-	    (SiS_Pr->SiS_CustomT == CUT_BARCO1024)) {
+	    (SiS_Pr->SiS_CustomT == CUT_BARCO1024) ||
+	    (SiS_Pr->SiS_CustomT == CUT_ICOP550)   ||
+	    (SiS_Pr->SiS_CustomT == CUT_ICOP550_2)) {
 	    tempah |= 0xf0;
 	 }
 	 if( (SiS_Pr->SiS_IF_DEF_FSTN) ||
@@ -5328,21 +5609,34 @@ SiS_SetCRT2FIFO_300(struct SiS_Private *SiS_Pr,unsigned short ModeNo)
 static void
 SiS_SetCRT2FIFO_310(struct SiS_Private *SiS_Pr)
 {
-  SiS_SetReg(SiS_Pr->SiS_Part1Port,0x01,0x3B);
-  if( (SiS_Pr->ChipType == SIS_760)      &&
-      (SiS_Pr->SiS_SysFlags & SF_760LFB)  &&
-      (SiS_Pr->SiS_ModeType == Mode32Bpp) &&
-      (SiS_Pr->SiS_VGAHDE >= 1280)	  &&
-      (SiS_Pr->SiS_VGAVDE >= 1024) ) {
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2f,0x03);
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x01,0x3b);
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x4d,0xc0);
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2f,0x01);
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x4d,0xc0);
-     SiS_SetReg(SiS_Pr->SiS_Part1Port,0x02,0x6e);
-  } else {
-     SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x02,~0x3f,0x04);
-  }
+
+	if(SiS_Pr->ChipType >= SIS_670){
+		SiS_SetReg(SiS_Pr->SiS_Part1Port,0x3b,0x00);
+		if(SiS_Pr->SiS_ModeType >= Mode24Bpp){
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x01,~0x3f,0x39);  	/* (karma) to reduce 800x600&640x480 noise */
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x02,~0x3f,0x0e);			
+		}else{
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x01,~0x3f,0x18);
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x02,~0x3f,0x12);	
+		}
+	}
+	else{
+		SiS_SetReg(SiS_Pr->SiS_Part1Port,0x01,0x3B);
+		if( 	(SiS_Pr->ChipType == SIS_760)      &&
+ 			(SiS_Pr->SiS_SysFlags & SF_760LFB)  &&
+ 			(SiS_Pr->SiS_ModeType == Mode32Bpp) &&
+  			(SiS_Pr->SiS_VGAHDE >= 1280)	  &&
+  			(SiS_Pr->SiS_VGAVDE >= 1024) ) {
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2f,0x03);
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x01,0x3b);
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x4d,0xc0);
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2f,0x01);
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x4d,0xc0);
+				SiS_SetReg(SiS_Pr->SiS_Part1Port,0x02,0x6e);
+		} else {
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x02,~0x3f,0x04);
+		}
+	}
 
 }
 #endif
@@ -5481,7 +5775,7 @@ SiS_SetGroup1_301(struct SiS_Private *SiS_Pr, unsigned short ModeNo,unsigned sho
   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1A,temp);                	/* SR0E, dither[7] */
 
   temp = SiS_GetRegByte((SiS_Pr->SiS_P3ca+0x02));
-  SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1b,temp);			/* ? */
+  SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1b,temp);			/* 3c2 */
 
 #ifdef SIS_XORG_XF86
 #ifdef TWDEBUG
@@ -5518,7 +5812,7 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
   unsigned int   tempeax = 0, tempebx, tempecx, tempvcfact = 0;
   BOOLEAN islvds = FALSE, issis  = FALSE, chkdclkfirst = FALSE;
   BOOLEAN lvds550 = FALSE;
-#ifdef SIS300
+#if defined(SIS300) || (defined(SIS315H) && defined(SIS_INCL_CUSTOM_ICOP))
   unsigned short crt2crtc = 0;
 #endif
 #ifdef SIS315H
@@ -5528,7 +5822,7 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
   if(ModeNo <= 0x13) {
      modeflag = SiS_Pr->SiS_SModeIDTable[ModeIdIndex].St_ModeFlag;
      resinfo = SiS_Pr->SiS_SModeIDTable[ModeIdIndex].St_ResInfo;
-#ifdef SIS300
+#if defined(SIS300) || (defined(SIS315H) && defined(SIS_INCL_CUSTOM_ICOP))
      crt2crtc = SiS_Pr->SiS_SModeIDTable[ModeIdIndex].St_CRT2CRTC;
 #endif
   } else if(SiS_Pr->UseCustomMode) {
@@ -5536,7 +5830,7 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
   } else {
      modeflag = SiS_Pr->SiS_EModeIDTable[ModeIdIndex].Ext_ModeFlag;
      resinfo = SiS_Pr->SiS_EModeIDTable[ModeIdIndex].Ext_RESINFO;
-#ifdef SIS300
+#if defined(SIS300) || (defined(SIS315H) && defined(SIS_INCL_CUSTOM_ICOP))
      crt2crtc = SiS_Pr->SiS_RefIndex[RefreshRateTableIndex].Ext_CRT2CRTC;
 #endif
   }
@@ -5566,9 +5860,9 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
 
 #ifdef SIS315H
   if((SiS_Pr->ChipType >= SIS_315H) && (SiS_Pr->SiS_VBInfo & SetCRT2ToLCDA)) {
-     if(IS_SIS330) {
+     if(SiS_Pr->ChipType == SIS_330) {
         SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x2D,0x10);
-     } else if(IS_SIS740) {
+     } else if(SiS_Pr->ChipType == SIS_740) {
         if(islvds) {
            SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x13,0xfb,0x04);
 	   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x2D,0x03);
@@ -5937,7 +6231,7 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
   if(SiS_Pr->SiS_IF_DEF_TRUMPION) {
      unsigned char *ROMAddr = SiS_Pr->VirtualRomBase;
      unsigned char *trumpdata;
-     int   i, j = crt2crtc;
+     int i, j = crt2crtc;
      unsigned char TrumpMode13[4]   = { 0x01, 0x10, 0x2c, 0x00 };
      unsigned char TrumpMode10_1[4] = { 0x01, 0x10, 0x27, 0x00 };
      unsigned char TrumpMode10_2[4] = { 0x01, 0x16, 0x10, 0x00 };
@@ -5950,16 +6244,16 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
      }
 
      SiS_SetRegAND(SiS_Pr->SiS_Part1Port,0x02,0xbf);
-     for(i=0; i<5; i++) {
+     for(i = 0; i < 5; i++) {
 	SiS_SetTrumpionBlock(SiS_Pr, trumpdata);
      }
      if(SiS_Pr->SiS_LCDResInfo == Panel_1024x768) {
 	if(ModeNo == 0x13) {
-	   for(i=0; i<4; i++) {
+	   for(i = 0; i < 4; i++) {
 	      SiS_SetTrumpionBlock(SiS_Pr, &TrumpMode13[0]);
 	   }
 	} else if(ModeNo == 0x10) {
-	   for(i=0; i<4; i++) {
+	   for(i = 0; i < 4; i++) {
 	      SiS_SetTrumpionBlock(SiS_Pr, &TrumpMode10_1[0]);
 	      SiS_SetTrumpionBlock(SiS_Pr, &TrumpMode10_2[0]);
 	   }
@@ -6069,6 +6363,8 @@ SiS_SetGroup1_LVDS(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned s
         SiS_SetReg(SiS_Pr->SiS_Part1Port,0x45,0x0a);
      }
   }
+
+
 #endif  /* SIS315H */
 }
 
@@ -6104,7 +6400,9 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   if(SiS_Pr->ChipType == SIS_550 &&
      SiS_Pr->SiS_IF_DEF_LVDS     &&
      !SiS_Pr->SiS_IF_DEF_DSTN    &&
-     !SiS_Pr->SiS_IF_DEF_FSTN) {
+     !SiS_Pr->SiS_IF_DEF_FSTN    &&
+     (SiS_Pr->SiS_CustomT != CUT_ICOP550) &&
+     (SiS_Pr->SiS_CustomT != CUT_ICOP550_2)) {
      lvds550 = 1;
   }
 
@@ -6380,7 +6678,7 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 
 	temp &= 0x3c;
 
-	SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x13,~0x3C,temp);   /* Panel Link Delay Compensation; (Software Command Reset; Power Saving) */
+	SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x13,~0x3C,temp);   
 
 #endif  /* SIS300 */
 
@@ -6411,7 +6709,7 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 		 }
 	      }
 
-	      SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2D,tempbl,temp);	    /* Panel Link Delay Compensation */
+	      SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2D,tempbl,temp);	    
 	   }
 
 	} /* < 661 */
@@ -6419,6 +6717,8 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 	tempax = 0;
 	if(modeflag & DoubleScanMode) tempax |= 0x80;
 	if(modeflag & HalfDCLK)       tempax |= 0x40;
+	if(SiS_Pr->ChipType>=SIS_761)
+            tempax |= 0x20;
 	SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2C,0x3f,tempax);
 
 #endif  /* SIS315H */
@@ -6426,6 +6726,14 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
      }
 
   }  /* Slavemode */
+
+  if(SiS_Pr->ChipType>=SIS_761)
+  {
+      SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2F, ~0x04, 0x04);
+      SiS_SetReg(SiS_Pr->SiS_Part1Port,0x27,0x04);
+	if(SiS_Pr->ChipType>=SIS_670) /* Set channel-B normal */
+		SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x38,0x60);
+  }
 
   if(SiS_Pr->SiS_VBType & VB_SISVB) {
      if((SiS_Pr->SiS_VBType & VB_NoLCD) && (SiS_Pr->SiS_VBInfo & SetCRT2ToLCD)) {
@@ -6447,6 +6755,20 @@ SiS_SetGroup1(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 	}
      }
   }
+
+   /*chaoyu add: in order to support 800*600 panel on 302LV, 
+       we patch for the mode 800*600. 
+       TODO: other mode! */
+  if((SiS_Pr->SiS_VBType &
+(VB_SIS302LV | VB_SIS302ELV))  && 
+  	(SiS_Pr->SiS_LCDResInfo == Panel_800x600)){
+  	   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1e,0x20);
+	   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x13,0x04);
+	   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1a,0x10);
+	   SiS_SetReg(SiS_Pr->SiS_Part1Port,0x35,0xac);
+  }
+
+  
 }
 
 /*********************************************/
@@ -6624,21 +6946,24 @@ SiS_SetTVSpecial(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
      }
 #endif
   } else if(SiS_Pr->SiS_TVMode & TVSetYPbPr525p) {
-     if(SiS_Pr->SiS_TVMode & TVSet525p1024) {
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1f,0x77);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x20,0x13);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2b,0x78);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2c,0x04);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x42,0x14);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x43,0x73);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1c,0xaf);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1e,0x71);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x21,0xbb);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x23,0xb5);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x26,0xdc);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x46,0x3c);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x45,0x11);
-        SiS_SetReg(SiS_Pr->SiS_Part2Port,0x44,0x00);
+        if(SiS_Pr->SiS_TVMode & TVSet525p1024) {
+	   if(SiS_Pr->ChipType < SIS_671){        
+        	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2c,0x04);
+        	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x42,0x14);        
+        	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x21,0xbb);
+        	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x23,0xb5);
+        	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x26,0xdc);
+	   }
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1b,0xd0);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1c,0xaf);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1e,0x71);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1f,0x77);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x20,0x13);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2b,0x78);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x43,0x78);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x44,0x8d);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x45,0x51);
+           SiS_SetReg(SiS_Pr->SiS_Part2Port,0x46,0x3d); 
      }
   } else if(!(SiS_Pr->SiS_TVMode & TVSetPAL)) {
      if(SiS_Pr->SiS_TVMode & TVSetNTSC1024) {
@@ -6707,6 +7032,23 @@ SiS_SetGroup2_Tail(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 	temp = 1;
 	if(ModeNo <= 0x13) temp = 3;
 	SiS_SetReg(SiS_Pr->SiS_Part2Port,0x0b,temp);
+
+	 /* chaoyu add:
+	  * ToDo: Patch for mode 1280x1024 on 1400x1050 panel. 
+	  * There are bugs in this mode. 
+	  */
+	if((SiS_Pr->SiS_VBType & VB_SIS307LV) && 
+            (ModeNo == 0x65 || ModeNo == 0x4d || ModeNo == 0x3a) ){
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x04, 0x1b);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x05, 0x29);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x06, 0x19);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x46, 0x1f);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x20, 0x07);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2c, 0xbb);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1f, 0x08);
+		SiS_SetReg(SiS_Pr->SiS_Part2Port,0x45, 0x4a);
+	}
+	
      }
   }
 }
@@ -6874,9 +7216,11 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   tempcx += 7;
   if(SiS_Pr->SiS_VBInfo & SetCRT2ToHiVision) tempcx -= 4;
   SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x22,0x0F,((tempcx << 4) & 0xf0));
-
+  
   tempbx = TimingPoint[j] | (TimingPoint[j+1] << 8);
   tempbx += tempcx;
+
+/*horizontal half line equalizer pulse End*/
   SiS_SetReg(SiS_Pr->SiS_Part2Port,0x24,tempbx);
   SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x25,0x0F,((tempbx >> 4) & 0xf0));
 
@@ -6889,6 +7233,7 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 
   j += 2;
   tempcx += (TimingPoint[j] | (TimingPoint[j+1] << 8));
+  /*horizontal sync half line pulse end*/
   SiS_SetReg(SiS_Pr->SiS_Part2Port,0x27,tempcx);
   SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x28,0x0F,((tempcx >> 4) & 0xf0));
 
@@ -6900,12 +7245,14 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   if(SiS_IsDualLink(SiS_Pr)) tempcx >>= 1;
   j += 2;
   tempcx -= (TimingPoint[j] | ((TimingPoint[j+1]) << 8));
+  /*horizontal (half line) blank expansion end*/
   SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x2D,0x0F,((tempcx << 4) & 0xf0));
 
   tempcx -= 11;
   if(!(SiS_Pr->SiS_VBInfo & SetCRT2ToTV)) {
      tempcx = SiS_GetVGAHT2(SiS_Pr) - 1;
   }
+  /*horizontal half line active End*/
   SiS_SetReg(SiS_Pr->SiS_Part2Port,0x2E,tempcx);
 
   tempbx = SiS_Pr->SiS_VDE;
@@ -6964,40 +7311,67 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 	SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x10,0xbf,((tempbx & 0x0400) >> 4));
      }
   }
-
+/*from here to find out the tempbx and tempcx difference*/
   tempax = tempbx = tempcx = 0;
   if(!(modeflag & HalfDCLK)) {
      if(SiS_Pr->SiS_VGAHDE >= SiS_Pr->SiS_HDE) {
-        tempbx |= 0x20;
+        tempbx |= 0x20;   /*enable downscale function*/
      }
   }
 
   tempch = tempcl = 1;
+  longtemp = SiS_Pr->SiS_VGAHDE;
   if(SiS_Pr->SiS_VBInfo & SetCRT2ToTV) {
-     if(SiS_Pr->SiS_VGAHDE >= 960) {
-        if(!(modeflag & HalfDCLK)) {
+  	if(SiS_Pr->ChipType < SIS_761){
+            if(longtemp > 800) {
+                if(!(modeflag & HalfDCLK)) {
+                    longtemp = 800;
+                    if(SiS_Pr->SiS_VGAHDE >= 1280) {
+                        tempbx &= ~0x20;
+                    } else if(SiS_Pr->SiS_VGAHDE == 960) {
+                        longtemp = 750;
+                    } else if(SiS_Pr->SiS_VGAHDE == 856) {
+                        longtemp = 672;
+                    } else if(SiS_Pr->SiS_VGAHDE == 848) {
+                        longtemp = 664;
+                    }
+#if 0
 	   tempcl = 32;
 	   if(SiS_Pr->SiS_VGAHDE >= 1280) {
               tempch = 20;
               tempbx &= ~0x20;
            } else if(SiS_Pr->SiS_VGAHDE >= 1024) {
               tempch = 25;
-           } else {
+           } else if(SiS_Pr->SiS_VGAHDE >= 960) {
 	      tempch = 25; /* OK */
+	   } else {
+	      tempch = 30;
 	   }
-        }
-     }
+#endif
+                }
+            }
+  	}
   }
 
-  if(!(tempbx & 0x20)) {
+  if((tempbx & 0x20)) {
+     if(modeflag & HalfDCLK) longtemp >>= 1;
+	 if(SiS_Pr->ChipType > SIS_761){
+             if(longtemp > SiS_Pr->SiS_HDE){ 
+                 longtemp=longtemp-SiS_Pr->SiS_HDE;
+             }
+	 }
+  }
+  
+     longtemp <<= 13;
+#if 0
      if(modeflag & HalfDCLK) tempcl <<= 1;
      longtemp = ((SiS_Pr->SiS_VGAHDE * tempch) / tempcl) << 13;
+#endif
      if(SiS_Pr->SiS_VBType & VB_SIS30xBLV) longtemp <<= 3;
      tempax = longtemp / SiS_Pr->SiS_HDE;
      if(longtemp % SiS_Pr->SiS_HDE) tempax++;
      tempbx |= ((tempax >> 8) & 0x1F);
      tempcx = tempax >> 13;
-  }
 
   SiS_SetReg(SiS_Pr->SiS_Part2Port,0x44,tempax);
   SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x45,0xC0,tempbx);
@@ -7031,7 +7405,7 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 
      if(SiS_Pr->SiS_VBType & VB_SIS30xCLV) {
         temp = 0;
-        if(SiS_Pr->SiS_TVMode & TVSetPALM) temp = 8;
+   /*     if(SiS_Pr->SiS_TVMode & TVSetPALM) temp = 8; (Karma)BUG?! */
         SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x4e,0xf7,temp);
      }
 
@@ -7054,7 +7428,6 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   if(SiS_Pr->SiS_VBInfo & SetCRT2ToTV) return;
 
   /* From here: Part2 LCD setup */
-
   tempbx = SiS_Pr->SiS_HDE;
   if(SiS_IsDualLink(SiS_Pr)) tempbx >>= 1;
   tempbx--;			         	/* RHACTE = HDE - 1 */
@@ -7180,7 +7553,9 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
        }
     }
 
-    tempbx = ((SiS_Pr->SiS_VT + SiS_Pr->SiS_VDE) >> 1) - 1;
+    tempbx = ((SiS_Pr->SiS_VT + SiS_Pr->SiS_VDE) >> 1) - 7;
+
+
     if(SiS_Pr->SiS_LCDInfo & DontExpandLCD) {
        if(SiS_Pr->PanelYRes != SiS_Pr->SiS_VDE) {
           if(!(SiS_Pr->SiS_LCDInfo & LCDPass11)) { /* ? */
@@ -7217,9 +7592,8 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 #endif
 
     SiS_SetReg(SiS_Pr->SiS_Part2Port,0x04,tempbx);	    /* lcdvrs */
-
     temp = (tempbx >> 4) & 0xF0;
-    tempbx += (tempcx + 1);
+    tempbx += (tempcx + 2);
     temp |= (tempbx & 0x0F);
 
     if(SiS_Pr->UseCustomMode) {
@@ -7244,8 +7618,14 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
     if(SiS_Pr->SiS_VBType & VB_SIS30xCLV)	bridgeoffset += 2; /* OK for Averatec 1280x800 (301C) */
     if(SiS_IsDualLink(SiS_Pr))			bridgeoffset++;
     else if(SiS_Pr->SiS_VBType & VB_SIS302LV)	bridgeoffset++;    /* OK for Asus A4L 1280x800 */
+    if(SiS_Pr->SiS_VBType & VB_SIS307LV){
+        if(SiS_Pr->SiS_LCDResInfo==Panel_1280x1024){
+            bridgeoffset = 0x04;
+	}else{
+            bridgeoffset = 0x08;
+	}
+    }
     /* Higher bridgeoffset shifts to the LEFT */
-
     temp = 0;
     if((SiS_Pr->SiS_LCDInfo & DontExpandLCD) && (!(SiS_Pr->SiS_LCDInfo & LCDPass11))) {
        if(SiS_Pr->PanelXRes != SiS_Pr->SiS_HDE) {
@@ -7276,15 +7656,14 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
     xf86DrvMsg(0, X_INFO, "lcdhdee 0x%x\n", tempbx);
 #endif
 #endif
-
     tempbx += bridgeoffset;
 
     SiS_SetReg(SiS_Pr->SiS_Part2Port,0x23,tempbx);	    /* lcdhdee */
     SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x25,0xF0,((tempbx >> 8) & 0x0f));
 
     tempcx = (tempcx - tempax) >> 2;
-
     tempbx += tempcx;
+
     push2 = tempbx;
 
     if(SiS_Pr->SiS_LCDResInfo == Panel_1280x1024) {
@@ -7307,7 +7686,6 @@ SiS_SetGroup2(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
     xf86DrvMsg(0, X_INFO, "lcdhrs 0x%x\n", tempbx);
 #endif
 #endif
-
     SiS_SetReg(SiS_Pr->SiS_Part2Port,0x1C,tempbx);	    /* lcdhrs */
     SiS_SetRegANDOR(SiS_Pr->SiS_Part2Port,0x1D,0x0F,((tempbx >> 4) & 0xf0));
 
@@ -7356,11 +7734,7 @@ SiS_SetGroup3(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
 
   if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCDA) return;
 
-#ifndef SIS_CP
   SiS_SetReg(SiS_Pr->SiS_Part3Port,0x00,0x00);
-#else
-  SIS_CP_INIT301_CP
-#endif
 
   if(SiS_Pr->SiS_TVMode & TVSetPALTiming) {
      SiS_SetReg(SiS_Pr->SiS_Part3Port,0x13,0xFA);
@@ -7401,9 +7775,6 @@ SiS_SetGroup3(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
      }
   }
 
-#ifdef SIS_CP
-  SIS_CP_INIT301_CP2
-#endif
 }
 
 /*********************************************/
@@ -7485,23 +7856,6 @@ SiS_SetGroup4_C_ELV(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned 
             SiS_SetRegAND(SiS_Pr->SiS_Part4Port,0x3b,0xfd);
          }
       }
-
-#if 0
-      if(SiS_Pr->ChipType >= SIS_661) { 		/* ? */
-         if(SiS_Pr->SiS_TVMode & TVAspect43) {
-            if(SiS_Pr->SiS_TVMode & TVSetYPbPr750p) {
-	       if(resinfo == SIS_RI_1024x768) {
-	          SiS_ShiftXPos(SiS_Pr, 97);
-	       } else {
-	          SiS_ShiftXPos(SiS_Pr, 111);
-	       }
-	    } else if(SiS_Pr->SiS_TVMode & TVSetHiVision) {
-	       SiS_ShiftXPos(SiS_Pr, 136);
-	    }
-         }
-      }
-#endif
-
    }
 
 }
@@ -7523,15 +7877,29 @@ SiS_SetCRT2VCLK(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned shor
   }
 
   if(SiS_Pr->SiS_VBType & VB_SIS30xBLV) {
-     if(SiS_Pr->SiS_TVMode & (TVSetNTSC1024 | TVSet525p1024)) {
+     if(SiS_Pr->SiS_TVMode & TVSetNTSC1024) {
         SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,0x57);
  	SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0b,0x46);
 	SiS_SetReg(SiS_Pr->SiS_Part4Port,0x1f,0xf6);
-     } else {
+     } else if (SiS_Pr->SiS_TVMode & TVSet525p1024) {
+        SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,0x57);
+ 		SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0b,0x64);
+		SiS_SetReg(SiS_Pr->SiS_Part4Port,0x1f,0xf6);
+     }
+     else {
         SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,reg1);
         SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0b,reg2);
      }
-  } else {
+/*karma for Ypbpr750p 1280x720*/
+      if(SiS_Pr->ChipType >= SIS_315H){
+         if(SiS_Pr->SiS_TVMode & TVSetYPbPr750p){
+	    if(ModeNo == 0x79 || ModeNo == 0x75 || ModeNo == 0x78){   
+	    SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,0x46); 
+	    SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0b,0x43); 
+	    }
+	 }
+      }
+   } else {
      SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,0x01);
      SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0b,reg2);
      SiS_SetReg(SiS_Pr->SiS_Part4Port,0x0a,reg1);
@@ -7605,6 +7973,7 @@ SiS_SetGroup4(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
      }
   }
 
+
   SiS_SetReg(SiS_Pr->SiS_Part4Port,0x13,SiS_Pr->SiS_RVBHCFACT);
 
   tempbx = SiS_Pr->SiS_RVBHCMAX;
@@ -7627,24 +7996,49 @@ SiS_SetGroup4(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   tempbx = SiS_Pr->SiS_VGAHDE;
   if(modeflag & HalfDCLK)    tempbx >>= 1;
   if(SiS_IsDualLink(SiS_Pr)) tempbx >>= 1;
-
-  if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
-     temp = 0;
-     if(tempbx > 800)        temp = 0x60;
-  } else if(SiS_Pr->SiS_VBInfo & SetCRT2ToHiVision) {
-     temp = 0;
-     if(tempbx > 1024)       temp = 0xC0;
-     else if(tempbx >= 960)  temp = 0xA0;
-  } else if(SiS_Pr->SiS_TVMode & TVSetYPbPrProg) {
-     temp = 0;
-     if(tempbx >= 1280)      temp = 0x40;
-     else if(tempbx >= 1024) temp = 0x20;
-  } else {
-     temp = 0x80;
-     if(tempbx >= 1024)      temp = 0xA0;
+  if(SiS_Pr->ChipType < SIS_761){
+      if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
+          temp = 0;
+          if(tempbx > 800)        temp = 0x60;
+      } else if(SiS_Pr->SiS_VBInfo & SetCRT2ToHiVision) {
+          temp = 0;
+          if(tempbx > 1024)       temp = 0xC0;
+          else if(tempbx > 800)   temp = 0xA0;
+      } else if(SiS_Pr->SiS_TVMode & TVSetYPbPrProg) {
+          temp = 0;
+          if(tempbx >= 1280)      temp = 0x40;
+          else if(tempbx > 800)   temp = 0x20;
+      } else {
+          temp = 0x80;
+          if(tempbx > 800)	     temp = 0xA0;
+      }
+  }else{
+      if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD){
+	  	  temp = 0;
+          if(tempbx > 960)        temp = 0x60;
+      }else if(SiS_Pr->SiS_TVMode & TVSetYPbPrProg){ 
+          temp = 0;
+          if(tempbx > 960)        temp = 0x60;
+		  if(SiS_Pr->ChipType >= SIS_662){  /*(karma) for YPbPr 1024x768&1280x720*/
+	 	     if(tempbx == 1024) 	  temp = 0x28;
+		     else if(tempbx == 1280) temp = 0x48;
+		  }
+      } /*(karma) for TV 800x600 & 640x480*/
+	  else if(SiS_Pr->SiS_VBInfo & (SetCRT2ToAVIDEO || SetCRT2ToSVIDEO)){
+	      temp = 0;
+	      if(tempbx > 1024)   temp = 0xc0;
+	      else if(tempbx > 960)   temp = 0xa0;
+	      else temp = 0x80;
+      } else if(SiS_Pr->SiS_TVMode & (TVSetInterlace)) {
+          temp = 0;
+          if(tempbx > 1024)       temp = 0xC0;
+          else if(tempbx > 960)   temp = 0xa0;
+          else temp = 0x80;
+      } 
   }
-
-  temp |= SiS_Pr->Init_P4_0E;
+  if(SiS_Pr->ChipType < SIS_761){
+      temp |= SiS_Pr->Init_P4_0E;
+  }
 
   if(SiS_Pr->SiS_VBType & VB_SIS301) {
      if(SiS_Pr->SiS_LCDResInfo != Panel_1280x1024) {
@@ -7685,40 +8079,47 @@ SiS_SetGroup4(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
   temp |= (tempcx & 0x4F);
   SiS_SetReg(SiS_Pr->SiS_Part4Port,0x19,temp);
 
+  /*karma for Ypbpr750p 1280x720*/
+  if((SiS_Pr->ChipType >= SIS_315H) && (SiS_Pr->SiS_TVMode & TVSetYPbPr750p))
+  {
+     if((ModeNo == 0x79) ||(ModeNo == 0x75)|| (ModeNo == 0x78))
+	  SiS_SetReg(SiS_Pr->SiS_Part4Port,0x1A,0x93);
+  }
+
   if(SiS_Pr->SiS_VBType & VB_SIS30xBLV) {
 
      SiS_SetReg(SiS_Pr->SiS_Part4Port,0x1C,0x28);
 
-     /* Calc Linebuffer max address and set/clear decimode */
      tempbx = 0;
-     if(SiS_Pr->SiS_TVMode & (TVSetHiVision | TVSetYPbPr750p)) tempbx = 0x08;
+     if(SiS_Pr->SiS_TVMode & (TVSetHiVision | TVSetYPbPr750p)) tempbx = 0x08; 
      tempax = SiS_Pr->SiS_VGAHDE;
      if(modeflag & HalfDCLK)    tempax >>= 1;
      if(SiS_IsDualLink(SiS_Pr)) tempax >>= 1;
-     if(tempax > 800) {
-        if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
-	   tempax -= 800;
-	} else {
-	   tempbx = 0x08;
-	   if(tempax == 960)	   tempax *= 25; /* Correct */
-           else if(tempax == 1024) tempax *= 25;
-           else			   tempax *= 20;
-	   temp = tempax % 32;
-	   tempax /= 32;
-	   if(temp) tempax++;
-	   tempax++;
-	   if(SiS_Pr->SiS_VBInfo & SetCRT2ToTV) {
-	      if(resinfo == SIS_RI_1024x768 ||
-	         resinfo == SIS_RI_1024x576 ||
-		 resinfo == SIS_RI_1280x1024 ||
-		 resinfo == SIS_RI_1280x720) {
-	         /* Otherwise white line or garbage at right edge */
-	         tempax = (tempax & 0xff00) | 0x20;
-	      } else if(resinfo == SIS_RI_960x540) {
-	         tempax = (tempax & 0xff00) | 0xed;
-	      }
-	   }
-	}
+     if(SiS_Pr->ChipType < SIS_761){
+         if(tempax > 800) {
+             if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
+	         tempax -= 800;
+	     } else {
+	         tempbx = 0x08;
+	         if(tempax == 960)      tempax = 749;
+	         else if(tempax == 856) tempax = 669;
+	         else if(tempax == 848) tempax = 662;
+	         else			  tempax = 800;
+	     }
+         }
+     }else{
+         tempbx &=~0x08; 
+
+             if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
+                 if(tempax>960)
+	             tempax -= 960;
+	     } else {
+	         if(tempax > 960){
+		     tempbx = 0x08;
+                     tempax = (tempax *3)/4;
+		 }
+	     }
+         
      }
      tempax--;
      temp = ((tempax >> 4) & 0x30) | tempbx;
@@ -7749,19 +8150,27 @@ SiS_SetGroup4(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
      SiS_SetReg(SiS_Pr->SiS_Part4Port,0x22,tempbx);
      temp = (tempbx >> 5) & 0x38;
      SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x21,0xC0,temp);
-
      if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
 	if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
            SiS_SetReg(SiS_Pr->SiS_Part4Port,0x24,0x0e);
-	   /* LCD-too-dark-error-source, see FinalizeLCD() */
 	}
      }
-
      SiS_SetDualLinkEtc(SiS_Pr);
-
   }  /* 301B */
-
   SiS_SetCRT2VCLK(SiS_Pr, ModeNo, ModeIdIndex, RefreshRateTableIndex);
+  
+   SiS_SetReg(SiS_Pr->SiS_Part4Port,0x1D,tempax);
+
+
+
+  /*chaoyu add: in order to support 800*600 panel on 302LV, 
+       we patch for the mode 800*600. 
+       TODO: other mode! */
+  if((SiS_Pr->SiS_VBType &
+(VB_SIS302LV | VB_SIS302ELV))  && 
+  	(SiS_Pr->SiS_LCDResInfo == Panel_800x600)){
+  	   SiS_SetReg(SiS_Pr->SiS_Part4Port,0x23,0x10);
+  }
 }
 
 /*********************************************/
@@ -7781,6 +8190,13 @@ SiS_SetGroup5(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short 
      }
   }
 }
+
+// PCF*
+SiS_ModifyVB(struct SiS_Private *SiS_Pr)
+{                  
+ 
+}
+
 
 /*********************************************/
 /*     MODIFY CRT1 GROUP FOR SLAVE MODE      */
@@ -8083,9 +8499,7 @@ SiS_SetCHTVReg(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short
       /* Register 0x3D does not exist in non-macrovision register map
             (Maybe this is a macrovision register?)
        */
-#ifndef SIS_CP
       SiS_SetCH70xx(SiS_Pr,0x3d,0x00);
-#endif
 
       /* Register 0x10 only contains 1 writable bit (S0) for sensing,
              all other bits a read-only. Macrovision?
@@ -8201,9 +8615,6 @@ SiS_SetCHTVReg(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short
 
    }
 
-#ifdef SIS_CP
-   SIS_CP_INIT301_CP3
-#endif
 
 }
 
@@ -8775,6 +9186,19 @@ SiS_SetCRT2Group(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 
 	 SiS_SetCRT2Sync(SiS_Pr, ModeNo, RefreshRateTableIndex);
 
+/*	 
+// PCF*
+	 if((SiS_Pr->SiS_VBType & VB_SISTMDS) && (SiS_Pr->SiS_VGAHDE == 1600) && (SiS_Pr->SiS_VGAVDE == 1200))
+	 {
+	 	  xf86DrvMsg(0, X_INFO, "Modify VB Regsiter\n");
+  	 	  xf86DrvMsg(0, X_INFO, "Modify VB Regsiter\n");
+	 	  xf86DrvMsg(0, X_INFO, "Modify VB Regsiter\n");
+	 	  xf86DrvMsg(0, X_INFO, "Modify VB Regsiter\n");
+	 	  xf86DrvMsg(0, X_INFO, "Modify VB Regsiter\n");
+		
+		  SiS_ModifyVB(SiS_Pr);
+	}
+*/
 	 /* For 301BDH (Panel link initialization): */
 	 if((SiS_Pr->SiS_VBType & VB_NoLCD) && (SiS_Pr->SiS_VBInfo & SetCRT2ToLCD)) {
 
@@ -8881,7 +9305,7 @@ void
 SiS_SiS30xBLOn(struct SiS_Private *SiS_Pr)
 {
   /* Switch on LCD backlight on SiS30xLV */
-  SiS_DDC2Delay(SiS_Pr,0xff00);
+  SiS_DDC2Delay(SiS_Pr, 0xff00);
   if(!(SiS_GetReg(SiS_Pr->SiS_Part4Port,0x26) & 0x02)) {
      SiS_SetRegOR(SiS_Pr->SiS_Part4Port,0x26,0x02);
      SiS_WaitVBRetrace(SiS_Pr);
@@ -8922,20 +9346,20 @@ SiS_SetTrumpBlockLoop(struct SiS_Private *SiS_Pr, unsigned char *dataptr)
   unsigned short tempah,temp;
   unsigned char *mydataptr;
 
-  for(i=0; i<20; i++) {				/* Do 20 attempts to write */
+  for(i = 0; i < 20; i++) {			/* Do 20 attempts to write */
      mydataptr = dataptr;
      num = *mydataptr++;
      if(!num) return mydataptr;
      if(i) {
         SiS_SetStop(SiS_Pr);
-	SiS_DDC2Delay(SiS_Pr,SiS_I2CDELAYSHORT * 2);
+	SiS_DDC2Delay(SiS_Pr, SiS_I2CDELAYSHORT * 2);
      }
      if(SiS_SetStart(SiS_Pr)) continue;		/* Set start condition */
      tempah = SiS_Pr->SiS_DDC_DeviceAddr;
-     temp = SiS_WriteDDC2Data(SiS_Pr,tempah);	/* Write DAB (S0=0=write) */
+     temp = SiS_WriteDDC2Data(SiS_Pr, tempah);	/* Write DAB (S0=0=write) */
      if(temp) continue;				/*    (ERROR: no ack) */
      tempah = *mydataptr++;
-     temp = SiS_WriteDDC2Data(SiS_Pr,tempah);	/* Write register number */
+     temp = SiS_WriteDDC2Data(SiS_Pr, tempah);	/* Write register number */
      if(temp) continue;				/*    (ERROR: no ack) */
      for(j=0; j<num; j++) {
         tempah = *mydataptr++;
@@ -9486,10 +9910,9 @@ SiS_HandleDDC(struct SiS_Private *SiS_Pr, unsigned int VBFlags, int VGAEngine,
       }
    }
    if((sr1f) || (!cr17)) {
-      SiS_WaitRetrace1(SiS_Pr);
-      SiS_WaitRetrace1(SiS_Pr);
-      SiS_WaitRetrace1(SiS_Pr);
-      SiS_WaitRetrace1(SiS_Pr);
+      for(result = 0; result < 10; result++) {
+         SiS_WaitRetrace1(SiS_Pr);
+      }
    }
 
    if(DDCdatatype == 0) {
@@ -9630,7 +10053,7 @@ SiS_SetSCLKLow(struct SiS_Private *SiS_Pr)
 		  SiS_Pr->SiS_DDC_Index,
 		  SiS_Pr->SiS_DDC_NClk,
 		  0x00);					/* SetSCLKLow()  */
-  SiS_DDC2Delay(SiS_Pr,SiS_I2CDELAYSHORT);
+  SiS_DDC2Delay(SiS_Pr, SiS_I2CDELAYSHORT);
   return 0;
 }
 
@@ -9743,7 +10166,7 @@ GetLCDPtrIndexBIOS(struct SiS_Private *SiS_Pr)
 {
   unsigned short index;
 
-  if((IS_SIS650) && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
+  if((SiS_Pr->ChipType == SIS_650) && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
      if(!(SiS_IsNotM650orLater(SiS_Pr))) {
         if((index = SiS_GetReg(SiS_Pr->SiS_P3d4,0x36) & 0xf0)) {
 	   index >>= 4;
@@ -9890,9 +10313,9 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
      else {
         delay = 0x04;
         if(SiS_Pr->SiS_VBType & VB_SIS30xB) {
-	   if(IS_SIS650) {
+	   if(SiS_Pr->ChipType == SIS_650) {
 	      delay = 0x0a;
-	   } else if(IS_SIS740) {
+	   } else if(SiS_Pr->ChipType == SIS_740) {
 	      delay = 0x00;
 	   } else if(SiS_Pr->ChipType < SIS_330) {
 	      delay = 0x0c;
@@ -9941,8 +10364,8 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 	         delay = 0x00;
 	      }
 	   } else if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
-	      if(IS_SIS740) delay = 0x01;
-	      else          delay = 0x03;
+	      if(SiS_Pr->ChipType == SIS_740)	delay = 0x01;
+	      else				delay = 0x03;
 	   }
 	   SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,delay);
 	}
@@ -9988,7 +10411,7 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
         index = GetLCDPtrIndexBIOS(SiS_Pr);
         myindex = GetLCDPtrIndex(SiS_Pr);
 
-        if(IS_SIS650 && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
+        if((SiS_Pr->ChipType == SIS_650) && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
 
            if(SiS_IsNotM650orLater(SiS_Pr)) {
 
@@ -10026,22 +10449,22 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 
         } else if(SiS_Pr->SiS_IF_DEF_LVDS == 1) {
 
-	   if(IS_SIS740) delay = 0x03;
-	   else          delay = 0x00;
+	   if(SiS_Pr->ChipType == SIS_740) delay = 0x03;
+	   else				   delay = 0x00;
 
 	} else {
 
            delay = SiS310_LCDDelayCompensation_301[myindex];
 	   if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
-	      if(IS_SIS740) delay = 0x01;
+	      if(SiS_Pr->ChipType == SIS_740) delay = 0x01;
 	      else if(SiS_Pr->ChipType <= SIS_315PRO) delay = SiS310_LCDDelayCompensation_3xx301LV[myindex];
 	      else          delay = SiS310_LCDDelayCompensation_650301LV[myindex];
 	   } else if(SiS_Pr->SiS_VBType & VB_SIS301C) {
-	      if(IS_SIS740) delay = 0x01;  /* ? */
+	      if(SiS_Pr->ChipType == SIS_740) delay = 0x01;  /* ? */
 	      else          delay = 0x03;
 	      if(SiS_Pr->SiS_LCDResInfo == Panel_1600x1200) delay = 0x00; /* experience */
 	   } else if(SiS_Pr->SiS_VBType & VB_SIS30xB) {
-	      if(IS_SIS740) delay = 0x01;
+	      if(SiS_Pr->ChipType == SIS_740) delay = 0x01;
 	      else          delay = SiS310_LCDDelayCompensation_3xx301B[myindex];
 	   }
 
@@ -10058,7 +10481,7 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 
      index = GetTVPtrIndex(SiS_Pr);
 
-     if(IS_SIS650 && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
+     if((SiS_Pr->ChipType == SIS_650) && (SiS_Pr->SiS_VBType & VB_SISLVDS)) {
 
         if(SiS_IsNotM650orLater(SiS_Pr)) {
 
@@ -10114,7 +10537,7 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 
 	delay = SiS310_TVDelayCompensation_301[index];
         if(SiS_Pr->SiS_VBType & VB_SIS30xBLV) {
-	   if(IS_SIS740) {
+	   if(SiS_Pr->ChipType == SIS_740) {
 	      delay = SiS310_TVDelayCompensation_740301B[index];
 	      /* LV: use 301 data? BIOS bug? */
 	   } else {
@@ -10136,7 +10559,7 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
 
   if(SiS_Pr->SiS_VBType & VB_SISVB) {
 
-     if(IS_SIS650 && (SiS_Pr->SiS_VBType & VB_SISLVDS) && dochiptest) {
+     if((SiS_Pr->ChipType == SIS_650) && (SiS_Pr->SiS_VBType & VB_SISLVDS) && dochiptest) {
 
         temp = (SiS_GetReg(SiS_Pr->SiS_P3d4,0x36) & 0xf0) >> 4;
         if(temp == 8) {		/* 1400x1050 BIOS (COMPAL) */
@@ -10161,7 +10584,7 @@ SetDelayComp(struct SiS_Private *SiS_Pr, unsigned short ModeNo)
      if(SiS_Pr->SiS_VBInfo & SetCRT2ToTV) {
         SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2D,0xF0,delay);
      } else {
-        if(IS_SIS650 && (SiS_Pr->SiS_IF_DEF_CH70xx != 0)) {
+        if((SiS_Pr->ChipType == SIS_650) && (SiS_Pr->SiS_IF_DEF_CH70xx != 0)) {
            delay <<= 4;
            SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2D,0x0F,delay);
         } else {
@@ -10377,6 +10800,43 @@ SetPhaseIncr(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned short M
      }
   }
 }
+static Bool
+DelayCompForFutroS400(struct SiS_Private *SiS_Pr)
+{
+	if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCDA)/*TMDS with 301c Via ChA*/
+        {
+	        if(SiS_Pr->SiS_HDE == 1280)
+	        {	if((SiS_Pr->SiS_VDE == 1024)||(SiS_Pr->SiS_VDE == 960))
+	                {
+		             SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2d,0x33); /*chanel A and B always be 0x33 in 1280x1024*/				          return 0;														    }
+	 	}
+		else if((SiS_Pr->SiS_HDE == 1440)&&(SiS_Pr->SiS_VDE == 900))
+		{ 
+			 SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0x0f,0x30); /*ChA always be oxd? in 1680x1050*/
+			                    return 0;
+		}
+		else if((SiS_Pr->SiS_HDE == 1680)&&(SiS_Pr->SiS_VDE == 1050))
+		{
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0x0f,0xd0); /*ChA always be oxd? in 1680x1050*/			             return 0;
+		}
+		else if((SiS_Pr->SiS_HDE == 1600)&&(SiS_Pr->SiS_VDE == 1200))					    {
+			SiS_SetReg(SiS_Pr->SiS_Part1Port,0x2d,0xb2);
+			return 0;
+	       	}
+	}
+    if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD){
+		
+		if(SiS_Pr->CHDisplay == 1280  &&  SiS_Pr->CVDisplay == 1024)	
+			{SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,0x03);
+             return 0;
+            }
+		else if  (SiS_Pr->CHDisplay ==  1600 &&  SiS_Pr->CVDisplay == 1200)
+			{SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,0x02);
+               return 0;
+            }
+     }
+        return 1;/*Use ROMNew*/
+}
 
 static void
 SetDelayComp661(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
@@ -10384,9 +10844,20 @@ SetDelayComp661(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
 {
    unsigned short delay = 0, romptr = 0, index, lcdpdcindex;
    unsigned char  *ROMAddr = SiS_Pr->VirtualRomBase;
+   unsigned char  useROMNew;
 
    if(!(SiS_Pr->SiS_VBInfo & (SetCRT2ToTV | SetCRT2ToLCD | SetCRT2ToLCDA | SetCRT2ToRAMDAC)))
       return;
+
+   /*New Futro Timing*/   
+   if(SiS_Pr->UseFutroTiming == TRUE)
+   {
+	if(!(useROMNew = DelayCompForFutroS400(SiS_Pr)))
+	{	
+	     xf86DrvMsg(0,X_INFO,"Futro Special Timing has been set\n");
+	     return;
+	}
+   }
 
    /* 1. New ROM: VGA2 and LCD/LCDA-Pass1:1 */
    /* (If a custom mode is used, Pass1:1 is always set; hence we do this:) */
@@ -10448,7 +10919,7 @@ SetDelayComp661(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
 	 }
       }
 
-   } else if(SiS_Pr->ChipType >= SIS_340) {
+   }else if(SiS_Pr->ChipType >= SIS_340) {
 
       delay = 0x0606;
       if(SiS_Pr->SiS_VBInfo & SetCRT2ToTV) {
@@ -10536,6 +11007,26 @@ SetDelayComp661(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
       SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,((delay >> 1) & 0x0f));
       SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x35,0x7f,((delay & 0x01) << 7));
    }
+
+	/*5. Other special cases*/
+
+
+   if(SiS_Pr->UseFutroTiming == TRUE){ /*Futro timing: 741 + 301C, channelB timing error*/
+
+	if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD){
+		
+		if(SiS_Pr->CHDisplay == 1280  &&  SiS_Pr->CVDisplay == 1024)	
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,0x03);
+		else if  (SiS_Pr->CHDisplay ==  1600 &&  SiS_Pr->CVDisplay == 1200)
+			SiS_SetRegANDOR(SiS_Pr->SiS_Part1Port,0x2d,0xf0,0x02);
+
+		xf86DrvMsg(0, X_INFO, "Special Timing has been set\n");
+	}	
+   }
+
+
+
+   
 }
 
 static void
@@ -10587,29 +11078,29 @@ SetPanelParms661(struct SiS_Private *SiS_Pr)
 {
    unsigned char  *ROMAddr = SiS_Pr->VirtualRomBase;
    unsigned short romptr, temp1, temp2;
-
-   if(SiS_Pr->SiS_VBType & (VB_SISLVDS | VB_SIS30xC)) {
-      SiS_SetRegAND(SiS_Pr->SiS_Part4Port,0x24,0x0f);
-   }
-
+   #ifdef TWDEBUG
+   unsigned char part4_0x24;
+   #endif
+   /*Ivans modify the PART4-0x24's value opration from ROM */
+   /*we don't rewrite part4-0x24's value if user do not using Option "LVDSHL" "0~3"*/
+  /*just using original setting value by VBIOS from booting util here.*/
    if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
       if(SiS_Pr->LVDSHL != -1) {
-         SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x24,0xfc,SiS_Pr->LVDSHL);
+      #ifdef TWDEBUG
+      xf86DrvMsg(0,X_INFO,"[SetPanelParms661->LVDSHL!=-1]:LVDSHL=%d.\n",SiS_Pr->LVDSHL);
+      #endif
+      
+      SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x24,0xfc,SiS_Pr->LVDSHL);
+      
+      #ifdef TWDEBUG
+      part4_0x24 = SiS_GetReg(SiS_Pr->SiS_Part4Port,0x24);
+      xf86DrvMsg(0,X_INFO,"[SetPanelParms661->after LVDSHL write in part4 0x24]:part4_0x24=%x.\n",part4_0x24); 
+      #endif
       }
    }
 
    if(SiS_Pr->SiS_ROMNew) {
-
       if((romptr = GetLCDStructPtr661_2(SiS_Pr))) {
-         if(SiS_Pr->SiS_VBType & VB_SISLVDS) {
-            temp1 = (ROMAddr[romptr] & 0x03) | 0x0c;
-	    temp2 = 0xfc;
-	    if(SiS_Pr->LVDSHL != -1) {
-	      temp1 &= 0xfc;
-	      temp2 = 0xf3;
-	    }
-	    SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x24,temp2,temp1);
-         }
 	 if(SiS_Pr->SiS_VBInfo & SetCRT2ToLCD) {
             temp1 = (ROMAddr[romptr + 1] & 0x80) >> 1;
             SiS_SetRegANDOR(SiS_Pr->SiS_Part4Port,0x0d,0xbf,temp1);
@@ -10707,7 +11198,7 @@ SiS_FinalizeLCD(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned shor
      modeflag =  SiS_Pr->SiS_EModeIDTable[ModeIdIndex].Ext_ModeFlag;
   }
 
-  if(IS_SIS650) {
+  if(SiS_Pr->ChipType == SIS_650) {
      if(!(SiS_GetReg(SiS_Pr->SiS_P3d4, 0x5f) & 0xf0)) {
         if(SiS_Pr->SiS_CustomT == CUT_CLEVO1024) {
 	   SiS_SetRegOR(SiS_Pr->SiS_Part1Port,0x1e,0x02);
@@ -10797,7 +11288,7 @@ SiS_FinalizeLCD(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned shor
 	      if((ModeNo > 0x13) && (resinfo == SIS_RI_1024x768)) {
 	         SiS_SetReg(SiS_Pr->SiS_Part1Port,0x18,0x02);  /* 1.10.7u */
 #if 0
-	         tempbx = 806;  /* 0x326 */			 /* other older BIOSes */
+	         tempbx = 806;  			 /* other older BIOSes */
 		 tempbx--;
 		 temp = tempbx & 0xff;
 		 SiS_SetReg(SiS_Pr->SiS_Part1Port,0x1b,temp);
@@ -11303,3 +11794,7 @@ SiS_OEM300Setting(struct SiS_Private *SiS_Pr, unsigned short ModeNo, unsigned sh
 }
 #endif
 
+unsigned int SiS_CheckLVDS(struct SiS_Private * SiS_Pr)   /* karma@080401 check LVDS to enable DualLink */
+{
+      return(SiS_GetReg(SiS_Pr->SiS_P3d4, 0x7E) & 0x01);
+}

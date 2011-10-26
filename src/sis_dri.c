@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_dri.c,v 1.26 2005/10/21 18:40:19 ajax Exp $ */
+/* $XdotOrg$ */
 /*
  * DRI wrapper for 300 and 315 series
  *
@@ -57,7 +57,10 @@ extern Bool drmSiSAgpInit(int driSubFD, int offset, int size);
 #ifdef XORG_VERSION_CURRENT
 #define SISHAVECREATEBUSID
 #if XORG_VERSION_CURRENT < XORG_VERSION_NUMERIC(6,7,99,1,0)
+ /*I.L. modified*/
+#ifndef XSERVER_LIBPCIACCESS
 extern char *DRICreatePCIBusID(pciVideoPtr PciInfo);
+#endif
 #endif
 #else
 # if XF86_VERSION_CURRENT < XF86_VERSION_NUMERIC(4,4,99,9,0)
@@ -106,6 +109,7 @@ static char SISKernelDriverName[] = "sis";
 /* The client side DRI drivers are different: */
 static char SISClientDriverNameSiS300[] = "sis";	/* 300, 540, 630, 730 */
 static char SISClientDriverNameSiS315[] = "sis315";	/* All of 315/330 series */
+static char SISClientDriverNameSiS671[] = "sis671";	/* for sis671 */
 static char SISClientDriverNameXGI[]    = "xgi";	/* XGI V3, V5, V8 */
 
 static Bool SISInitVisualConfigs(ScreenPtr pScreen);
@@ -122,6 +126,10 @@ static void SISDRISwapContext(ScreenPtr pScreen, DRISyncType syncType,
 static void SISDRIInitBuffers(WindowPtr pWin, RegionPtr prgn, CARD32 index);
 static void SISDRIMoveBuffers(WindowPtr pParent, DDXPointRec ptOldOrg,
                    RegionPtr prgnSrc, CARD32 index);
+
+
+
+extern pthread_mutex_t *CmdQ_Lock;
 
 static Bool
 SISInitVisualConfigs(ScreenPtr pScreen)
@@ -204,8 +212,8 @@ SISInitVisualConfigs(ScreenPtr pScreen)
 	        pConfigs[i].accumBlueSize  = 0;
 	        pConfigs[i].accumAlphaSize = 0;
 	     }
-	     if(db) pConfigs[i].doubleBuffer = TRUE;
-	     else   pConfigs[i].doubleBuffer = FALSE;
+	     if(db) pConfigs[i].doubleBuffer = FALSE;
+	     else   pConfigs[i].doubleBuffer = TRUE;
 	     pConfigs[i].stereo = FALSE;
 	     pConfigs[i].bufferSize = -1;
 	     switch(z_stencil) {
@@ -218,11 +226,11 @@ SISInitVisualConfigs(ScreenPtr pScreen)
 	        pConfigs[i].stencilSize = 0;
 	        break;
 	     case 2:
-	       pConfigs[i].depthSize = 32;
+	       pConfigs[i].depthSize = 20;
 	       pConfigs[i].stencilSize = 0;
 	       break;
 	     case 3:
-	       pConfigs[i].depthSize = 24;
+	       pConfigs[i].depthSize = 20;
 	       pConfigs[i].stencilSize = 8;
 	       break;
              }
@@ -257,6 +265,7 @@ SISInitVisualConfigs(ScreenPtr pScreen)
 
   return TRUE;
 }
+
 
 Bool
 SISDRIScreenInit(ScreenPtr pScreen)
@@ -309,7 +318,10 @@ SISDRIScreenInit(ScreenPtr pScreen)
   } else if(pSIS->ChipFlags & SiSCF_IsXGI) {
      pDRIInfo->clientDriverName = SISClientDriverNameXGI;
   } else {
-     pDRIInfo->clientDriverName = SISClientDriverNameSiS315;
+     if (pSIS->Chipset == PCI_CHIP_SIS671)
+	 	pDRIInfo->clientDriverName = SISClientDriverNameSiS671;
+     else
+	 	pDRIInfo->clientDriverName = SISClientDriverNameSiS315;
   }
 
 #ifdef SISHAVECREATEBUSID
@@ -351,7 +363,10 @@ SISDRIScreenInit(ScreenPtr pScreen)
 #endif
   pDRIInfo->frameBufferSize = pSIS->FbMapSize;
 
-  /* scrnOffset is being calulated in sis_vga.c */
+  /* scrnOffset is being calulated in sis_vga.c. It
+   * is constant throughout server livetime (apart
+   * from when DGA is active)
+   */
   pDRIInfo->frameBufferStride = pSIS->scrnOffset;
 
   pDRIInfo->ddxDrawableTableEntry = SIS_MAX_DRAWABLES;
@@ -362,17 +377,9 @@ SISDRIScreenInit(ScreenPtr pScreen)
      pDRIInfo->maxDrawableTableEntry = SIS_MAX_DRAWABLES;
 
 #ifdef NOT_DONE
-  /* FIXME need to extend DRI protocol to pass this size back to client
-   * for SAREA mapping that includes a device private record
-   */
   pDRIInfo->SAREASize =
     ((sizeof(XF86DRISAREARec) + getpagesize() - 1) & getpagesize()); /* round to page */
-    /* ((sizeof(XF86DRISAREARec) + 0xfff) & 0x1000); */ /* round to page */
-  /* + shared memory device private rec */
 #else
-  /* For now the mapping works by using a fixed size defined
-   * in the SAREA header
-   */
   if(sizeof(XF86DRISAREARec) + sizeof(SISSAREAPriv) > SAREA_MAX) {
      xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 		"[dri] Data does not fit in SAREA. Disabling the DRI.\n");
@@ -404,6 +411,7 @@ SISDRIScreenInit(ScreenPtr pScreen)
      DRIDestroyInfoRec(pSIS->pDRIInfo);
      pSIS->pDRIInfo = 0;
      pSIS->drmSubFD = -1;
+     pSIS->DRIEnabled = FALSE;
      return FALSE;
   }
 
@@ -430,7 +438,13 @@ SISDRIScreenInit(ScreenPtr pScreen)
         drm_sis_fb_t fb;
         fb.offset = pSIS->DRIheapstart;
         fb.size = pSIS->DRIheapend - pSIS->DRIheapstart;
-        drmCommandWrite(pSIS->drmSubFD, DRM_SIS_FB_INIT, &fb, sizeof(fb));
+        if (drmCommandWrite(pSIS->drmSubFD, DRM_SIS_FB_INIT, &fb, sizeof(fb))) {
+           xf86DrvMsg(pScreen->myNum, X_ERROR,
+                      "[dri] Initializing Video RAM heap failed. Disabling DRI.\n");
+           drmFreeVersion(version);
+           SISDRICloseScreen(pScreen);
+           return FALSE;
+        }
         xf86DrvMsg(pScreen->myNum, X_INFO,
 		"[dri] Video RAM memory heap: 0x%0x to 0x%0x (%dKB)\n",
 		pSIS->DRIheapstart, pSIS->DRIheapend,
@@ -440,20 +454,21 @@ SISDRIScreenInit(ScreenPtr pScreen)
   }
 #endif
 
-  /* MMIO */
-  pSISDRI->regs.size = SISIOMAPSIZE;
-#ifndef SISISXORG6899900
-  pSISDRI->regs.map = 0;
-#endif
+    
+ /* MMIO */
+	pSISDRI->regs.size = SISIOMAPSIZE;
+/* chris, marked */
+/*#ifndef SISISXORG6899900*/
+	pSISDRI->regs.map = 0;
+/*#endif*/
   if(drmAddMap(pSIS->drmSubFD, (drm_handle_t)pSIS->IOAddress,
 		pSISDRI->regs.size, DRM_REGISTERS, 0,
 		&pSISDRI->regs.handle) < 0) {
      SISDRICloseScreen(pScreen);
      return FALSE;
   }
-
-  xf86DrvMsg(pScreen->myNum, X_INFO, "[drm] MMIO registers mapped to 0x%0x\n",
-		pSISDRI->regs.handle);
+	xf86DrvMsg(pScreen->myNum, X_INFO, "[dri] handle = 0x%x, size = %d\n",
+				pSISDRI->regs.handle, pSISDRI->regs.size);
 
   /* AGP */
   do {
@@ -649,6 +664,63 @@ SISDRIScreenInit(ScreenPtr pScreen)
 
   pSISDRI->irqEnabled = pSIS->irqEnabled;
 
+#ifdef ENABLEXvMC  
+   /*XvMC support setting: 
+     Allocate 4K Agp memory for overlay register, and 7 or 8MB for XvMC. 
+     Physical address follow the agp of dri ( for 3d ).
+   */
+   pSIS->numSurfaces = 0;
+   pSIS->MC_AgpAllocHandle = 0;
+   switch(pSIS->ChipType){
+      case SIS_741:
+      case SIS_662:
+      case SIS_671:
+         pSIS->numSurfaces = 6;
+         break;
+      default:
+         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "[MC] Sorry, we don't support XvMC on this chip.\n");
+         break;
+   }
+   if (pSIS->numSurfaces) {
+      drm_handle_t agpHandle;
+      pSIS->MC_AgpAlloc.Start = pSIS->agpWantedSize;
+      if (pSIS->numSurfaces == 6) {
+	 pSIS->MC_AgpAlloc.Size = 7 * 1024 * 1024 + 4096;
+	 /*pSIS->MC.Start = pSIS->FbMapSize - 7 * 1024 * 1024*/ ;
+      }
+      if (pSIS->numSurfaces == 8) {
+	 pSIS->MC_AgpAlloc.Size = 9 * 1024 * 1024 + 4096;
+	 /*pSIS->MC.Start = pSIS->FbMapSize - 8 * 1024 * 1024 */;
+      }
+      drmAgpAlloc(pSIS->drmSubFD, pSIS->MC_AgpAlloc.Size, 0, &pSIS->MC_AgpAlloc.Start ,
+		  (drmAddress) &agpHandle);
+      
+      pSIS->MC_AgpAllocHandle = agpHandle;
+
+      if (agpHandle != DRM_AGP_NO_HANDLE) {
+	 if (drmAgpBind(pSIS->drmSubFD, agpHandle, pSIS->agpWantedSize) == 0) {
+	    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+		       "[MC] GART: Allocated %dKB for HWMC\n", (pSIS->MC_AgpAlloc.Size/1024));
+	    pSIS->MC_AgpAlloc.End = pSIS->MC_AgpAlloc.Start + pSIS->MC_AgpAlloc.Size;
+           pSIS->MC_AgpAlloc.DRM_Success = TRUE; /* Karma@080304 Check DRM Enbale */
+	 } else {
+	    xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "[MC] GART: HWMC bind failed\n");
+	    pSIS->MC_AgpAlloc.Start = 0;
+	    pSIS->MC_AgpAlloc.Size = 0;
+	    pSIS->MC_AgpAlloc.End = 0;
+           pSIS->MC_AgpAlloc.DRM_Success = FALSE; /* Karma@080304 Check DRM Enbale */
+	 }
+      } else {
+	 xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "[MC] GART: HWMC alloc failed\n");
+	 pSIS->MC_AgpAlloc.Start = 0;
+	 pSIS->MC_AgpAlloc.Size = 0;
+	 pSIS->MC_AgpAlloc.End = 0;
+        pSIS->MC_AgpAlloc.DRM_Success = FALSE; /* Karma@080304 Check DRM Enbale */
+      }
+      pSIS->xvmcContext = 0;
+   }
+#endif
+
   if(!(SISInitVisualConfigs(pScreen))) {
      SISDRICloseScreen(pScreen);
      return FALSE;
@@ -673,6 +745,8 @@ SISDRIFinishScreenInit(ScreenPtr pScreen)
   pSISDRI->deviceID = pSiS->Chipset;
 #ifdef SIS315DRI
   pSISDRI->deviceRev= pSiS->ChipRev;
+  pSISDRI->cmdQueueOffset = pSiS->cmdQueueOffset;
+  pSISDRI->cmdQueueSize = pSiS->cmdQueueSize;
 #endif
   pSISDRI->width    = pScrn->virtualX;
   pSISDRI->height   = pScrn->virtualY;
@@ -682,12 +756,6 @@ SISDRIFinishScreenInit(ScreenPtr pScreen)
   /* TODO */
   pSISDRI->scrnX    = pSISDRI->width;
   pSISDRI->scrnY    = pSISDRI->height;
-
-  /* Offset of the front buffer (relative from beginning
-   * of video RAM). This is usually 0, but eventually not
-   * if running on a SiS76x with LFB and UMA memory.
-   * THE DRI DRIVER DOES NOT USE THIS YET (MESA 6.2.1)
-   */
   pSISDRI->fbOffset      = pSiS->FbBaseOffset;
 
   /* These are unused. Offsets are set up by the DRI */
@@ -705,6 +773,7 @@ SISDRIFinishScreenInit(ScreenPtr pScreen)
     assert(saPriv);
 
     saPriv->CtxOwner = -1;
+	CmdQ_Lock = &(saPriv->CmdQ_Lock);
 
     switch(pSiS->VGAEngine) {
 
@@ -712,17 +781,11 @@ SISDRIFinishScreenInit(ScreenPtr pScreen)
     case SIS_315_VGA:
        saPriv->AGPVtxBufNext = 0;
 
-       saPriv->QueueLength = pSiS->cmdQueueSize;  /* Total (not: current) size, in bytes! */
-
-       /* Copy current queue position to sarea */
+       saPriv->QueueLength = pSiS->cmdQueueSize; 
        saPriv->sharedWPoffset = *(pSiS->cmdQ_SharedWritePort);
-       /* Delegate our shared offset to current queue position */
+       saPriv->agpCmdBufWriteOffset = 0xFFFFFFFF;
        pSiS->cmdQ_SharedWritePortBackup = pSiS->cmdQ_SharedWritePort;
        pSiS->cmdQ_SharedWritePort = &(saPriv->sharedWPoffset);
-
-       saPriv->cmdQueueOffset = pSiS->cmdQueueOffset;
-
-       /* TODO: Reset frame control */
 
        break;
 #endif
@@ -779,6 +842,15 @@ SISDRICloseScreen(ScreenPtr pScreen)
      pSIS->irq = 0;
   }
 
+#ifdef ENABLEXvMC
+   if(pSIS->MC_AgpAllocHandle){
+      if(drmAgpUnbind(pSIS->drmSubFD, pSIS->MC_AgpAllocHandle) != 0)
+         xf86DrvMsg(pScreen->myNum, X_ERROR, "[MC] Unbind AGP Failed!\n");
+      if(drmAgpFree(pSIS->drmSubFD, pSIS->MC_AgpAllocHandle) != 0)
+         xf86DrvMsg(pScreen->myNum, X_ERROR, "[MC] Free AGP Failed!\n");
+   }
+#endif
+
   if(pSIS->agpSize){
      xf86DrvMsg(pScreen->myNum, X_INFO, "[drm] Freeing AGP memory\n");
      drmAgpUnbind(pSIS->drmSubFD, pSIS->agpHandle);
@@ -787,6 +859,8 @@ SISDRICloseScreen(ScreenPtr pScreen)
      drmAgpRelease(pSIS->drmSubFD);
      pSIS->agpSize = 0;
   }
+
+
 
   DRICloseScreen(pScreen);
 

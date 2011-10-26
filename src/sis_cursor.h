@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/sis_cursor.h,v 1.10 2005/07/04 10:57:08 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * SiS hardware cursor handling
  * Definitions
@@ -214,7 +214,7 @@
   SIS_MMIO_OUT32(pSiS->IOBase,CS(8),temp); \
   }
 
-/* 315/330 series CRT1 */
+/* 315/330/later series CRT1 */
 
 /* 80000000 = RGB(1) - MONO(0)
  * 40000000 = enable(1) - disable(0)

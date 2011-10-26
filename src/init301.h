@@ -1,5 +1,5 @@
 /* $XFree86$ */
-/* $XdotOrg: driver/xf86-video-sis/src/init301.h,v 1.25 2005/09/17 23:07:17 twini Exp $ */
+/* $XdotOrg$ */
 /*
  * Data and prototypes for init301.c
  *
@@ -64,9 +64,6 @@
 #ifdef SIS_LINUX_KERNEL
 #include "vgatypes.h"
 #include "vstruct.h"
-#ifdef SIS_CP
-#undef SIS_CP
-#endif
 #include <linux/config.h>
 #include <linux/version.h>
 #include <linux/types.h>
@@ -161,7 +158,8 @@ static const unsigned char SiS_TVPhase[] =
 	0x21,0xE6,0xEF,0xA4,	/* 0x0a SiS_PALMPhase2 */
 	0x21,0xF6,0x94,0x46,	/* 0x0b SiS_PALNPhase2 */
 	0x1E,0x8B,0xA2,0xA7,
-	0x1E,0x83,0x0A,0xE0,	/* 0x0d SiS_SpecialPhaseM */
+  /*0x1E,0x83,0x0A,0xE0,*/	/* 0x0d SiS_SpecialPhaseM OLD*/
+	0x1E,0x83,0x00,0xE0,	/* 0x0d SiS_SpecialPhaseM */
 	0x00,0x00,0x00,0x00,
 	0x00,0x00,0x00,0x00,
 	0x1e,0x8c,0x5c,0x7a,	/* 0x10 SiS_SpecialPhase */
@@ -449,5 +447,6 @@ extern unsigned int	sisfb_read_lpc_pci_dword(struct SiS_Private *SiS_Pr, int reg
 extern void		SiS_SetGroup2_C_ELV(struct SiS_Private *SiS_Pr, unsigned short ModeNo,
 				unsigned short ModeIdIndex, unsigned short RefreshRateTableIndex);
 #endif
-
 #endif
+
+unsigned int SiS_CheckLVDS(struct SiS_Private *SiS_Pr); /* karma@080401 check LVDS to enable DualLink */

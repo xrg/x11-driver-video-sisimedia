@@ -20892,7 +20892,7 @@ MAKE_HTML="SGML_SEARCH_PATH=$DEFS_ENT_PATH $LINUXDOC  -B html --split=0"
 
 
 
-                              ac_config_files="$ac_config_files Makefile src/Makefile man/Makefile"
+                              ac_config_files="$ac_config_files Makefile src/Makefile src/xvmc/Makefile man/Makefile"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -21486,6 +21486,7 @@ do
   # Handling of arguments.
   "Makefile" ) CONFIG_FILES="$CONFIG_FILES Makefile" ;;
   "src/Makefile" ) CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
+  "src/xvmc/Makefile" ) CONFIG_FILES="$CONFIG_FILES src/xvmc/Makefile" ;;
   "man/Makefile" ) CONFIG_FILES="$CONFIG_FILES man/Makefile" ;;
   "depfiles" ) CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
   "config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS config.h" ;;
