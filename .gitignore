@@ -1,0 +1,14 @@
+Makefile
+/autom4te.cache
+*.lo
+*.o
+/config.h
+*~
+.deps
+.libs
+/config.log
+/config.status
+/libtool
+/man/sis.4
+/src/sisimedia_drv.la
+/stamp-h1
